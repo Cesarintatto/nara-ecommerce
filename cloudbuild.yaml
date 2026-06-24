@@ -1,0 +1,238 @@
+# =============================================================================
+# NARA E-commerce — Cloud Build → Cloud Run
+# =============================================================================
+#
+# Prerrequisitos (una sola vez):
+#
+# 1. Habilitar APIs:
+#    gcloud services enable run.googleapis.com artifactregistry.googleapis.com \
+#      cloudbuild.googleapis.com secretmanager.googleapis.com
+#
+# 2. Crear repositorio en Artifact Registry:
+#    gcloud artifacts repositories create nara \
+#      --repository-format=docker \
+#      --location=us-central1
+#
+# 3. Crear secretos en Secret Manager:
+#    echo -n "postgresql://USER:PASS@HOST:5432/nara_db" | \
+#      gcloud secrets create nara-database-url --data-file=-
+#    echo -n "tu-jwt-secreto-largo" | \
+#      gcloud secrets create nara-jwt-secret --data-file=-
+#
+# 4. Dar permisos a la cuenta de Cloud Build (PROJECT_NUMBER desde console):
+#    PROJECT_ID=tu-proyecto
+#    PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
+#    CB_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
+#    gcloud projects add-iam-policy-binding $PROJECT_ID \
+#      --member="serviceAccount:${CB_SA}" --role="roles/run.admin"
+#    gcloud projects add-iam-policy-binding $PROJECT_ID \
+#      --member="serviceAccount:${CB_SA}" --role="roles/iam.serviceAccountUser"
+#    gcloud secrets add-iam-policy-binding nara-database-url \
+#      --member="serviceAccount:${CB_SA}" --role="roles/secretmanager.secretAccessor"
+#    gcloud secrets add-iam-policy-binding nara-jwt-secret \
+#      --member="serviceAccount:${CB_SA}" --role="roles/secretmanager.secretAccessor"
+#
+# 5. Ejecutar el pipeline:
+#    gcloud builds submit --config=cloudbuild.yaml .
+#
+# Variables opcionales al ejecutar:
+#    gcloud builds submit --config=cloudbuild.yaml . \
+#      --substitutions=_REGION=us-central1,_AR_REPO=nara
+#
+# Cloud SQL (opcional): si usas Cloud SQL, crea el secreto DATABASE_URL con socket
+# y despliega con:
+#    --substitutions=_CLOUD_SQL_INSTANCE=proyecto:region:instancia
+# =============================================================================
+
+substitutions:
+  _REGION: us-central1
+  _AR_REPO: nara
+  _SERVICE_API: nara-api
+  _SERVICE_USER: nara-user
+  _SERVICE_ADMIN: nara-admin
+  _CLOUD_SQL_INSTANCE: ""
+  _API_CPU: "1"
+  _API_MEMORY: 512Mi
+  _WEB_CPU: "1"
+  _WEB_MEMORY: 256Mi
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 1800s
+
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:${COMMIT_SHA}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:latest
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:${COMMIT_SHA}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:latest
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:${COMMIT_SHA}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:latest
+
+steps:
+  # ---------------------------------------------------------------------------
+  # 1. Backend — build
+  # ---------------------------------------------------------------------------
+  - id: build-api
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - backend/Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:${COMMIT_SHA}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:latest
+      - .
+
+  # ---------------------------------------------------------------------------
+  # 2. Backend — deploy
+  # ---------------------------------------------------------------------------
+  - id: deploy-api
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        IMAGE="${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:${COMMIT_SHA}"
+        DEPLOY=(gcloud run deploy ${_SERVICE_API}
+          --image="$$IMAGE"
+          --region=${_REGION}
+          --platform=managed
+          --port=8080
+          --cpu=${_API_CPU}
+          --memory=${_API_MEMORY}
+          --allow-unauthenticated
+          --set-secrets=DATABASE_URL=nara-database-url:latest,JWT_SECRET=nara-jwt-secret:latest
+          --set-env-vars=RUN_MIGRATIONS=true,NODE_ENV=production
+          --quiet)
+        if [ -n "${_CLOUD_SQL_INSTANCE}" ]; then
+          DEPLOY+=(--add-cloudsql-instances=${_CLOUD_SQL_INSTANCE})
+        fi
+        "$${DEPLOY[@]}"
+    waitFor:
+      - build-api
+
+  # ---------------------------------------------------------------------------
+  # 3. Obtener URL pública de la API (para VITE_API_URL en frontends)
+  # ---------------------------------------------------------------------------
+  - id: get-api-url
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        gcloud run services describe ${_SERVICE_API} \
+          --region=${_REGION} \
+          --format='value(status.url)' | tr -d '\n' > /workspace/api_url.txt
+        echo "API URL: $$(cat /workspace/api_url.txt)"
+    waitFor:
+      - deploy-api
+
+  # ---------------------------------------------------------------------------
+  # 4. Frontend user — build con URL de la API
+  # ---------------------------------------------------------------------------
+  - id: build-user
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        API_URL=$$(cat /workspace/api_url.txt)
+        docker build -f frontend-user/Dockerfile \
+          --build-arg "VITE_API_URL=$$API_URL" \
+          -t ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:${COMMIT_SHA} \
+          -t ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:latest \
+          .
+    waitFor:
+      - get-api-url
+
+  # ---------------------------------------------------------------------------
+  # 5. Frontend user — deploy
+  # ---------------------------------------------------------------------------
+  - id: deploy-user
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE_USER}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:${COMMIT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --port=8080
+      - --cpu=${_WEB_CPU}
+      - --memory=${_WEB_MEMORY}
+      - --allow-unauthenticated
+      - --quiet
+    waitFor:
+      - build-user
+
+  # ---------------------------------------------------------------------------
+  # 6. Frontend admin — build con URL de la API
+  # ---------------------------------------------------------------------------
+  - id: build-admin
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        API_URL=$$(cat /workspace/api_url.txt)
+        docker build -f frontend-admin/Dockerfile \
+          --build-arg "VITE_API_URL=$$API_URL" \
+          -t ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:${COMMIT_SHA} \
+          -t ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:latest \
+          .
+    waitFor:
+      - get-api-url
+
+  # ---------------------------------------------------------------------------
+  # 7. Frontend admin — deploy
+  # ---------------------------------------------------------------------------
+  - id: deploy-admin
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE_ADMIN}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:${COMMIT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --port=8080
+      - --cpu=${_WEB_CPU}
+      - --memory=${_WEB_MEMORY}
+      - --allow-unauthenticated
+      - --quiet
+    waitFor:
+      - build-admin
+
+  # ---------------------------------------------------------------------------
+  # 8. Actualizar CORS del backend con URLs finales de user y admin
+  # ---------------------------------------------------------------------------
+  - id: update-api-env
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        API_URL=$$(cat /workspace/api_url.txt)
+        USER_URL=$$(gcloud run services describe ${_SERVICE_USER} \
+          --region=${_REGION} --format='value(status.url)')
+        ADMIN_URL=$$(gcloud run services describe ${_SERVICE_ADMIN} \
+          --region=${_REGION} --format='value(status.url)')
+        echo "CLIENT_URL=$$USER_URL"
+        echo "ADMIN_URL=$$ADMIN_URL"
+        echo "BACKEND_URL=$$API_URL"
+        gcloud run services update ${_SERVICE_API} \
+          --region=${_REGION} \
+          --update-env-vars="CLIENT_URL=$$USER_URL,ADMIN_URL=$$ADMIN_URL,BACKEND_URL=$$API_URL" \
+          --quiet
+    waitFor:
+      - deploy-user
+      - deploy-admin

@@ -1,0 +1,88 @@
+// /backend/prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  PENDING
+  APPROVED
+  SHIPPED
+  CANCELLED
+  REFUNDED
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  password      String
+  role          String   @default("ADMIN") // Para panel administrativo
+  failedAttempts Int     @default(0)
+  lockedUntil   DateTime?
+  createdAt     DateTime @default(now())
+}
+
+model Product {
+  id              String             @id @default(uuid())
+  name            String
+  description     String
+  slug            String             @unique
+  basePrice       Decimal            @db.Decimal(10, 2) // Precio de venta
+  costPrice       Decimal            @db.Decimal(10, 2) // Precio de lote/maquila para margen
+  category        Category           @relation(fields: [categoryId], references: [id])
+  categoryId      String
+  images          String[]           // URLs de OCI Object Storage
+  stockPhysical   Int                // Inventario real en bodega
+  stockAvailable  Int                // Inventario menos reservas activas
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  orderItems      OrderItem[]
+  reservations    StockReservation[]
+}
+
+model Category {
+  id       String    @id @default(uuid())
+  name     String    @unique
+  products Product[]
+}
+
+model StockReservation {
+  id           String   @id @default(uuid())
+  productId    String
+  product      Product  @relation(fields: [productId], references: [id])
+  quantity     Int
+  externalId   String   @unique // ID de preferencia de Mercado Pago
+  expiresAt    DateTime // TTL de 15 minutos
+  createdAt    DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+model Order {
+  id               String      @id @default(uuid())
+  customerEmail    String
+  customerName     String
+  status           OrderStatus @default(PENDING)
+  totalAmount      Decimal     @db.Decimal(10, 2)
+  mercadopagoId    String?     @unique
+  trackingNumber   String?     // Guía de envío física
+  shippingAddress  Json        // Datos de dirección
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  items            OrderItem[]
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id])
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int
+  priceAtPurchase Decimal @db.Decimal(10, 2)
+}

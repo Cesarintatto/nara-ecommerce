@@ -1,0 +1,29 @@
+{
+  "name": "nara-ecommerce-monorepo",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend-user",
+    "frontend-admin"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:all": "npm run dev --workspaces --if-present",
+    "install:all": "npm install --workspaces",
+    "build": "npm run build --workspaces --if-present",
+    "build:backend": "npm run build -w backend",
+    "build:user": "npm run build -w frontend-user",
+    "build:admin": "npm run build -w frontend-admin",
+    "start": "npm run start -w backend",
+    "start:backend": "npm run start -w backend",
+    "start:user": "npm run start -w frontend-user",
+    "start:admin": "npm run start -w frontend-admin",
+    "db:generate": "npm run db:generate -w backend",
+    "db:migrate": "npm run db:migrate -w backend",
+    "db:migrate:deploy": "npm run db:migrate:deploy -w backend",
+    "db:seed": "npm run db:seed -w backend",
+    "docker:build:backend": "docker build -f backend/Dockerfile -t nara-api .",
+    "docker:build:user": "docker build -f frontend-user/Dockerfile -t nara-user .",
+    "docker:build:admin": "docker build -f frontend-admin/Dockerfile -t nara-admin ."
+  }
+}

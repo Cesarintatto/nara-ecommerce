@@ -1,0 +1,148 @@
+# /docs/openapi.yaml
+openapi: 3.0.0
+info:
+  title: NARA E-commerce API
+  description: API para la gestión de catálogo, reservas de stock con TTL, integración con Mercado Pago y panel administrativo.
+  version: 1.0.0
+
+servers:
+  - url: https://api.nara-culture.com/v1
+    description: Servidor de Producción
+
+paths:
+  # --- PÚBLICO: CATÁLOGO ---
+  /products:
+    get:
+      summary: Listar productos con filtros
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de productos obtenida con éxito
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Product'
+
+  /products/{slug}:
+    get:
+      summary: Detalle de producto por slug
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Detalle del producto
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+
+  # --- TRANSACCIONAL: RESERVAS Y CHECKOUT ---
+  /reservations:
+    post:
+      summary: Crear reserva de stock (TTL 15 min) al iniciar checkout
+      description: Bloquea unidades temporalmente antes de redirigir a Mercado Pago.
+      body:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                productId: { type: string }
+                quantity: { type: integer }
+                customerEmail: { type: string }
+      responses:
+        '201':
+          description: Reserva creada. Retorna ID de preferencia para MP.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reservationId: { type: string }
+                  preferenceId: { type: string }
+
+  /webhooks/mercadopago:
+    post:
+      summary: Webhook de confirmación de pago
+      description: Recibe el estado 'approved' para consolidar la orden y liberar reserva.
+      responses:
+        '200':
+          description: Webhook procesado
+
+  # --- ADMINISTRATIVO ---
+  /admin/auth/login:
+    post:
+      summary: Login administrativo con bloqueo preventivo
+      responses:
+        '200':
+          description: Token JWT generado
+        '401':
+          description: Credenciales inválidas (Suma al contador de bloqueos)
+
+  /admin/dashboard/stats:
+    get:
+      summary: Métricas de Margen Neto y Rotación
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinancialStats'
+
+  /admin/orders/{id}/tracking:
+    patch:
+      summary: Actualizar guía de envío y disparar email (Brevo)
+      security:
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                trackingNumber: { type: string }
+      responses:
+        '200':
+          description: Orden actualizada y correo enviado
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Product:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        basePrice: { type: number }
+        costPrice: { type: number, description: "Solo visible para admin" }
+        stockAvailable: { type: integer }
+        images:
+          type: array
+          items: { type: string, format: uri }
+
+    FinancialStats:
+      type: object
+      properties:
+        grossRevenue: { type: number }
+        totalCosts: { type: number }
+        netMargin: { type: number }
+        inventoryRotation: { type: number }
