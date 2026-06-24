@@ -15,8 +15,10 @@ export default {
         },
       },
       fontFamily: {
-        serif: ['"Playfair Display"', 'serif'],
-        sans: ['"Inter"', 'sans-serif'],
+        roboto: ['"Roboto"', 'sans-serif'],
+        montserrat: ['"Montserrat"', 'sans-serif'],
+        manrope: ['"Manrope"', 'sans-serif'],
+        'noto-serif': ['"Noto Serif"', 'serif'],
       },
       borderRadius: {
         nara: '12px',

@@ -1,56 +1,13 @@
 # =============================================================================
 # NARA E-commerce — Cloud Build → Cloud Run
 # =============================================================================
-#
-# Prerrequisitos (una sola vez):
-#
-# 1. Habilitar APIs:
-#    gcloud services enable run.googleapis.com artifactregistry.googleapis.com \
-#      cloudbuild.googleapis.com secretmanager.googleapis.com
-#
-# 2. Crear repositorio en Artifact Registry:
-#    gcloud artifacts repositories create nara \
-#      --repository-format=docker \
-#      --location=us-central1
-#
-# 3. Crear secretos en Secret Manager:
-#    echo -n "postgresql://USER:PASS@HOST:5432/nara_db" | \
-#      gcloud secrets create nara-database-url --data-file=-
-#    echo -n "tu-jwt-secreto-largo" | \
-#      gcloud secrets create nara-jwt-secret --data-file=-
-#
-# 4. Dar permisos a la cuenta de Cloud Build (PROJECT_NUMBER desde console):
-#    PROJECT_ID=tu-proyecto
-#    PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
-#    CB_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
-#    gcloud projects add-iam-policy-binding $PROJECT_ID \
-#      --member="serviceAccount:${CB_SA}" --role="roles/run.admin"
-#    gcloud projects add-iam-policy-binding $PROJECT_ID \
-#      --member="serviceAccount:${CB_SA}" --role="roles/iam.serviceAccountUser"
-#    gcloud secrets add-iam-policy-binding nara-database-url \
-#      --member="serviceAccount:${CB_SA}" --role="roles/secretmanager.secretAccessor"
-#    gcloud secrets add-iam-policy-binding nara-jwt-secret \
-#      --member="serviceAccount:${CB_SA}" --role="roles/secretmanager.secretAccessor"
-#
-# 5. Ejecutar el pipeline:
-#    gcloud builds submit --config=cloudbuild.yaml .
-#
-# Variables opcionales al ejecutar:
-#    gcloud builds submit --config=cloudbuild.yaml . \
-#      --substitutions=_REGION=us-central1,_AR_REPO=nara
-#
-# Cloud SQL (opcional): si usas Cloud SQL, crea el secreto DATABASE_URL con socket
-# y despliega con:
-#    --substitutions=_CLOUD_SQL_INSTANCE=proyecto:region:instancia
-# =============================================================================
-
 substitutions:
   _REGION: us-central1
   _AR_REPO: nara
   _SERVICE_API: nara-api
   _SERVICE_USER: nara-user
   _SERVICE_ADMIN: nara-admin
-  _CLOUD_SQL_INSTANCE: ""
+  _CLOUD_SQL_INSTANCE: "" # Formato: "proyecto:region:instancia"
   _API_CPU: "1"
   _API_MEMORY: 512Mi
   _WEB_CPU: "1"
@@ -61,17 +18,9 @@ options:
 
 timeout: 1800s
 
-images:
-  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:${COMMIT_SHA}
-  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:latest
-  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:${COMMIT_SHA}
-  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:latest
-  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:${COMMIT_SHA}
-  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:latest
-
 steps:
   # ---------------------------------------------------------------------------
-  # 1. Backend — build
+  # 1. Backend — Build
   # ---------------------------------------------------------------------------
   - id: build-api
     name: gcr.io/cloud-builders/docker
@@ -81,23 +30,135 @@ steps:
       - backend/Dockerfile
       - -t
       - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:${COMMIT_SHA}
-      - -t
+      - --cache-from
       - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:latest
       - .
+    waitFor: ['-']
 
   # ---------------------------------------------------------------------------
-  # 2. Backend — deploy
+  # 2. Frontend User — Build
+  # ---------------------------------------------------------------------------
+  - id: build-user
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - frontend-user/Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:${COMMIT_SHA}
+      - --cache-from
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:latest
+      - .
+    waitFor: ['-']
+
+  # ---------------------------------------------------------------------------
+  # 3. Frontend Admin — Build
+  # ---------------------------------------------------------------------------
+  - id: build-admin
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - frontend-admin/Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:${COMMIT_SHA}
+      - --cache-from
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:latest
+      - .
+    waitFor: ['-']
+
+  # ---------------------------------------------------------------------------
+  # 4. Push all images
+  # ---------------------------------------------------------------------------
+  - id: push-images
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}
+    waitFor:
+      - build-api
+      - build-user
+      - build-admin
+
+  # ---------------------------------------------------------------------------
+  # 5. Database Migrations (se ejecuta antes de que el nuevo servicio reciba tráfico)
+  # ---------------------------------------------------------------------------
+  - id: migrate-db
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - execute
+      - ${_SERVICE_API}-migrate
+      - --region
+      - ${_REGION}
+      - --wait
+    waitFor: [push-images]
+    
+  # ---------------------------------------------------------------------------
+  # 6. Backend — Deploy
   # ---------------------------------------------------------------------------
   - id: deploy-api
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: bash
+    entrypoint: gcloud
     args:
-      - -c
-      - |
-        set -euo pipefail
-        IMAGE="${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:${COMMIT_SHA}"
-        DEPLOY=(gcloud run deploy ${_SERVICE_API}
-          --image="$$IMAGE"
+      - run
+      - deploy
+      - ${_SERVICE_API}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:${COMMIT_SHA}
+      - --region=${_REGION}
+      - --cpu=${_API_CPU}
+      - --memory=${_API_MEMORY}
+      - --set-secrets=DATABASE_URL=nara-database-url:latest,JWT_SECRET=nara-jwt-secret:latest
+      - --cloud-sql-instances=${_CLOUD_SQL_INSTANCE}
+      - --allow-unauthenticated
+      - --project=${PROJECT_ID}
+    waitFor: [migrate-db]
+
+  # ---------------------------------------------------------------------------
+  # 7. Frontend User — Deploy
+  # ---------------------------------------------------------------------------
+  - id: deploy-user
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE_USER}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:${COMMIT_SHA}
+      - --region=${_REGION}
+      - --cpu=${_WEB_CPU}
+      - --memory=${_WEB_MEMORY}
+      - --allow-unauthenticated
+      - --project=${PROJECT_ID}
+    waitFor: [push-images]
+
+  # ---------------------------------------------------------------------------
+  # 8. Frontend Admin — Deploy
+  # ---------------------------------------------------------------------------
+  - id: deploy-admin
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE_ADMIN}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:${COMMIT_SHA}
+      - --region=${_REGION}
+      - --cpu=${_WEB_CPU}
+      - --memory=${_WEB_MEMORY}
+      - --allow-unauthenticated
+      - --project=${PROJECT_ID}
+    waitFor: [push-images]
+
+# Lista de imágenes a pushear a Artifact Registry
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:${COMMIT_SHA}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:${COMMIT_SHA}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:${COMMIT_SHA}
+
           --region=${_REGION}
           --platform=managed
           --port=8080

@@ -1,11 +1,19 @@
+<script setup>
+import Navbar from './components/layout/Navbar.vue';
+import Footer from './components/layout/Footer.vue';
+</script>
+
 <template>
-  <div class="min-h-screen bg-nara-light font-sans text-nara-dark">
+  <div class="min-h-screen bg-gray-50 font-sans text-gray-800">
     <Navbar />
-    <router-view v-slot="{ Component }">
-      <transition name="fade" mode="out-in">
-        <component :is="Component" />
-      </transition>
-    </router-view>
+    <main class="pt-20">
+      <router-view v-slot="{ Component }">
+        <transition name="fade" mode="out-in">
+          <component :is="Component" />
+        </transition>
+      </router-view>
+    </main>
+    <Footer />
   </div>
 </template>
 

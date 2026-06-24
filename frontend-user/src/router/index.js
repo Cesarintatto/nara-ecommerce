@@ -1,10 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import LandingView from '../views/LandingView.vue'
+import HomeView from '../views/HomeView.vue'
 import CatalogView from '../views/CatalogView.vue'
 import ProductDetailView from '../views/ProductDetailView.vue'
 
 const routes = [
-  { path: '/', name: 'home', component: LandingView },
+  { path: '/', name: 'home', component: HomeView },
   { path: '/catalogo', name: 'catalog', component: CatalogView },
   { path: '/producto/:slug', name: 'product', component: ProductDetailView },
 ]

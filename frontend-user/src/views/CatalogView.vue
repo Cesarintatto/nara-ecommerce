@@ -34,9 +34,8 @@ const filteredProducts = computed(() => {
 <template>
   <div class="pt-24 pb-16 px-6 max-w-7xl mx-auto">
     <header class="mb-12 text-center">
-      <img src="../assets/images/Nara-white.png" alt="NARA" class="logo" width="367px" height="300px"/>
-      <h1 class="text-4xl font-serif mb-4">Nuestra Colección</h1>
-      <p class="text-nara-dark/60 italic">Piezas diseñadas para el ritmo de tu propia piel.</p>
+      <h1 class="text-4xl font-noto-serif mb-4">Nuestra Colección</h1>
+      <p class="text-gray-500 italic font-manrope">Piezas diseñadas para el ritmo de tu propia piel.</p>
     </header>
 
     <p v-if="error" class="text-center text-red-600 mb-8">{{ error }}</p>
