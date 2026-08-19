@@ -36,7 +36,7 @@ router.post('/admin/products', requireAuth, createAdminProduct);
 router.patch('/admin/products/:id', requireAuth, updateAdminProduct);
 router.delete('/admin/products/:id', requireAuth, deleteAdminProduct);
 
-router.post('/reservations', createCheckout);
+router.post('/checkout', createCheckout);
 router.post('/webhooks/mercadopago', handleMPWebhook);
 
 router.post('/internal/cron/release-expired-stock', requireCronSecret, releaseExpiredStock);

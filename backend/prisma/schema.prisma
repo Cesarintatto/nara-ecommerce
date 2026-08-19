@@ -51,16 +51,26 @@ model Category {
   products Product[]
 }
 
-model StockReservation {
-  id           String   @id @default(uuid())
-  productId    String
-  product      Product  @relation(fields: [productId], references: [id])
-  quantity     Int
-  externalId   String   @unique // ID de preferencia de Mercado Pago
-  expiresAt    DateTime // TTL de 15 minutos
-  createdAt    DateTime @default(now())
+model Checkout {
+  id              String             @id @default(uuid())
+  externalId      String             @unique // ID de preferencia de Mercado Pago
+  customerEmail   String
+  customerName    String
+  shippingAddress Json
+  expiresAt       DateTime           // TTL de 15 minutos
+  createdAt       DateTime           @default(now())
+  reservations    StockReservation[]
 
   @@index([expiresAt])
+}
+
+model StockReservation {
+  id         String   @id @default(uuid())
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+  quantity   Int
+  checkoutId String
+  checkout   Checkout @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
 }
 
 model Order {

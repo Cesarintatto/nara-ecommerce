@@ -29,3 +29,4 @@ yarn-error.log*
 # Other
 .DS_Store
 .cursor/
+.claude/settings.local.json

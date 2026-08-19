@@ -3,14 +3,18 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SizeAssistant from '../components/product/SizeAssistant.vue'
 import api from '../api/client'
+import { useCartStore } from '../store/cartStore'
 
 const route = useRoute()
 const router = useRouter()
+const cart = useCartStore()
 
 const product = ref(null)
 const isLoading = ref(true)
 const error = ref('')
 const activeImageIndex = ref(0)
+const quantity = ref(1)
+const justAdded = ref(false)
 
 const formatPrice = (value) =>
   new Intl.NumberFormat('es-CO', {
@@ -25,6 +29,7 @@ const loadProduct = async (slug) => {
   isLoading.value = true
   error.value = ''
   activeImageIndex.value = 0
+  quantity.value = 1
   try {
     const { data } = await api.get(`/products/${slug}`)
     product.value = data
@@ -38,6 +43,23 @@ const loadProduct = async (slug) => {
   } finally {
     isLoading.value = false
   }
+}
+
+const decreaseQuantity = () => {
+  quantity.value = Math.max(1, quantity.value - 1)
+}
+
+const increaseQuantity = () => {
+  quantity.value = Math.min(product.value?.stockAvailable || 1, quantity.value + 1)
+}
+
+const addToCart = () => {
+  if (!product.value || product.value.stockAvailable === 0) return
+  cart.addItem(product.value, quantity.value)
+  justAdded.value = true
+  setTimeout(() => {
+    justAdded.value = false
+  }, 1800)
 }
 
 onMounted(() => loadProduct(route.params.slug))
@@ -116,14 +138,47 @@ watch(
 
         <SizeAssistant class="mb-8" />
 
+        <div v-if="product.stockAvailable > 0" class="flex items-center gap-4 mb-4">
+          <span class="text-xs uppercase tracking-widest text-nara-dark/50">Cantidad</span>
+          <div class="flex items-center border border-nara-dark/15 rounded-xl overflow-hidden">
+            <button
+              type="button"
+              class="w-10 h-10 flex items-center justify-center hover:bg-nara-olive/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              :disabled="quantity <= 1"
+              @click="decreaseQuantity"
+            >
+              −
+            </button>
+            <span class="w-10 text-center">{{ quantity }}</span>
+            <button
+              type="button"
+              class="w-10 h-10 flex items-center justify-center hover:bg-nara-olive/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              :disabled="quantity >= product.stockAvailable"
+              @click="increaseQuantity"
+            >
+              +
+            </button>
+          </div>
+        </div>
+
         <button
           type="button"
           :disabled="product.stockAvailable === 0"
           class="w-full bg-nara-dark text-white py-4 rounded-xl hover:bg-nara-sand transition-colors uppercase tracking-widest font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+          @click="addToCart"
         >
           {{ product.stockAvailable === 0 ? 'Agotado' : 'Añadir al carrito' }}
         </button>
-        <p class="mt-3 text-center text-xs text-nara-dark/30">Checkout disponible próximamente</p>
+        <p v-if="justAdded" class="mt-3 text-center text-xs text-nara-olive font-semibold">
+          Añadido al carrito ✓
+        </p>
+        <router-link
+          v-if="justAdded"
+          to="/carrito"
+          class="mt-1 block text-center text-xs text-nara-dark/50 hover:text-nara-olive underline"
+        >
+          Ver carrito
+        </router-link>
       </div>
     </div>
   </div>
