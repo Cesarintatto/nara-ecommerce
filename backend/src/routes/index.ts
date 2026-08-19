@@ -13,8 +13,10 @@ import {
 } from '../controllers/admin-products.controller';
 import { createCheckout } from '../controllers/checkout.controller';
 import { handleMPWebhook } from '../controllers/webhook.controller';
+import { releaseExpiredStock } from '../controllers/cron.controller';
 import { checkAuthLock } from '../middlewares/auth';
 import { requireAuth } from '../middlewares/jwtAuth';
+import { requireCronSecret } from '../middlewares/cronAuth';
 
 const router = Router();
 
@@ -36,5 +38,7 @@ router.delete('/admin/products/:id', requireAuth, deleteAdminProduct);
 
 router.post('/reservations', createCheckout);
 router.post('/webhooks/mercadopago', handleMPWebhook);
+
+router.post('/internal/cron/release-expired-stock', requireCronSecret, releaseExpiredStock);
 
 export default router;

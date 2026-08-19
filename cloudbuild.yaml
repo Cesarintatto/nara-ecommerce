@@ -1,17 +1,50 @@
 # =============================================================================
 # NARA E-commerce — Cloud Build → Cloud Run
 # =============================================================================
+# Flujo:
+#   1. Build + push de la imagen de la API
+#   2. Migraciones de BD vía Cloud Run Job (antes de que el nuevo revision
+#      reciba tráfico — evita instancias corriendo `prisma migrate deploy`
+#      concurrentemente)
+#   3. Deploy de la API, con CORS (CLIENT_URL/ADMIN_URL/BACKEND_URL) fijado
+#      a los dominios propios (_USER_DOMAIN/_ADMIN_DOMAIN/_API_DOMAIN)
+#   4. Cloud Scheduler para la limpieza de reservas TTL, contra _API_DOMAIN
+#   5. Build + push + deploy de los frontends, con VITE_API_URL=_API_DOMAIN
+#      horneado en el build (Vite lo resuelve en tiempo de compilación)
+#
+# Los dominios propios (naracol.com) se sirven vía un Load Balancer HTTPS
+# global + Serverless NEGs, armado por fuera de este pipeline (ver Network
+# Services > Load Balancing en la consola). Cloud Run domain-mappings NO
+# está soportado en southamerica-east1, por eso el LB en vez del mapeo directo.
+#
+# Requisitos previos (una sola vez, fuera de este pipeline):
+#   - Repo de Artifact Registry: gcloud artifacts repositories create nara ...
+#   - Instancia Cloud SQL (Postgres) creada
+#   - Secretos en Secret Manager: nara-database-url, nara-jwt-secret,
+#     nara-cron-secret (ver backend/.env.example)
+#   - La service account de Cloud Build / Cloud Run con permiso
+#     roles/secretmanager.secretAccessor sobre esos secretos
+#   - Load Balancer + certificado administrado apuntando a los 3 dominios
+# =============================================================================
+
 substitutions:
-  _REGION: us-central1
+  _REGION: southamerica-east1
   _AR_REPO: nara
   _SERVICE_API: nara-api
   _SERVICE_USER: nara-user
   _SERVICE_ADMIN: nara-admin
-  _CLOUD_SQL_INSTANCE: "" # Formato: "proyecto:region:instancia"
+  _CLOUD_SQL_INSTANCE: "" # Formato: "proyecto:region:instancia" (vacío = sin Cloud SQL)
   _API_CPU: "1"
   _API_MEMORY: 512Mi
+  _API_MAX_INSTANCES: "10"
   _WEB_CPU: "1"
   _WEB_MEMORY: 256Mi
+  _CRON_SCHEDULE: "* * * * *"
+  # Dominios propios (naracol.com), servidos por el Load Balancer — reemplazan
+  # a las URLs *.run.app como entrypoint público canónico.
+  _API_DOMAIN: https://api.naracol.com
+  _USER_DOMAIN: https://www.naracol.com
+  _ADMIN_DOMAIN: https://admin.naracol.com
 
 options:
   logging: CLOUD_LOGGING_ONLY
@@ -20,7 +53,7 @@ timeout: 1800s
 
 steps:
   # ---------------------------------------------------------------------------
-  # 1. Backend — Build
+  # 1. Backend — Build + Push
   # ---------------------------------------------------------------------------
   - id: build-api
     name: gcr.io/cloud-builders/docker
@@ -29,171 +62,111 @@ steps:
       - -f
       - backend/Dockerfile
       - -t
-      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:${COMMIT_SHA}
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:${BUILD_ID}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:latest
       - --cache-from
       - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:latest
       - .
     waitFor: ['-']
 
-  # ---------------------------------------------------------------------------
-  # 2. Frontend User — Build
-  # ---------------------------------------------------------------------------
-  - id: build-user
-    name: gcr.io/cloud-builders/docker
-    args:
-      - build
-      - -f
-      - frontend-user/Dockerfile
-      - -t
-      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:${COMMIT_SHA}
-      - --cache-from
-      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:latest
-      - .
-    waitFor: ['-']
-
-  # ---------------------------------------------------------------------------
-  # 3. Frontend Admin — Build
-  # ---------------------------------------------------------------------------
-  - id: build-admin
-    name: gcr.io/cloud-builders/docker
-    args:
-      - build
-      - -f
-      - frontend-admin/Dockerfile
-      - -t
-      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:${COMMIT_SHA}
-      - --cache-from
-      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:latest
-      - .
-    waitFor: ['-']
-
-  # ---------------------------------------------------------------------------
-  # 4. Push all images
-  # ---------------------------------------------------------------------------
-  - id: push-images
+  - id: push-api
     name: gcr.io/cloud-builders/docker
     args:
       - push
       - --all-tags
-      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}
-    waitFor:
-      - build-api
-      - build-user
-      - build-admin
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}
+    waitFor: [build-api]
 
   # ---------------------------------------------------------------------------
-  # 5. Database Migrations (se ejecuta antes de que el nuevo servicio reciba tráfico)
+  # 2. Migraciones de base de datos (Cloud Run Job)
+  #    Crea/actualiza el Job y lo ejecuta antes del deploy. Idempotente.
   # ---------------------------------------------------------------------------
   - id: migrate-db
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: gcloud
+    entrypoint: bash
     args:
-      - run
-      - jobs
-      - execute
-      - ${_SERVICE_API}-migrate
-      - --region
-      - ${_REGION}
-      - --wait
-    waitFor: [push-images]
-    
+      - -c
+      - |
+        set -euo pipefail
+        JOB=(gcloud run jobs deploy ${_SERVICE_API}-migrate
+          --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:${BUILD_ID}
+          --region=${_REGION}
+          --command=/app/node_modules/.bin/prisma
+          --args=migrate,deploy
+          --set-secrets=DATABASE_URL=nara-database-url:latest
+          --execute-now
+          --wait
+          --quiet)
+        if [ -n "${_CLOUD_SQL_INSTANCE}" ]; then
+          JOB+=(--set-cloudsql-instances=${_CLOUD_SQL_INSTANCE})
+        fi
+        "$${JOB[@]}"
+    waitFor: [push-api]
+
   # ---------------------------------------------------------------------------
-  # 6. Backend — Deploy
+  # 3. API — Deploy
   # ---------------------------------------------------------------------------
   - id: deploy-api
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: gcloud
+    entrypoint: bash
     args:
-      - run
-      - deploy
-      - ${_SERVICE_API}
-      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:${COMMIT_SHA}
-      - --region=${_REGION}
-      - --cpu=${_API_CPU}
-      - --memory=${_API_MEMORY}
-      - --set-secrets=DATABASE_URL=nara-database-url:latest,JWT_SECRET=nara-jwt-secret:latest
-      - --cloud-sql-instances=${_CLOUD_SQL_INSTANCE}
-      - --allow-unauthenticated
-      - --project=${PROJECT_ID}
-    waitFor: [migrate-db]
-
-  # ---------------------------------------------------------------------------
-  # 7. Frontend User — Deploy
-  # ---------------------------------------------------------------------------
-  - id: deploy-user
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: gcloud
-    args:
-      - run
-      - deploy
-      - ${_SERVICE_USER}
-      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:${COMMIT_SHA}
-      - --region=${_REGION}
-      - --cpu=${_WEB_CPU}
-      - --memory=${_WEB_MEMORY}
-      - --allow-unauthenticated
-      - --project=${PROJECT_ID}
-    waitFor: [push-images]
-
-  # ---------------------------------------------------------------------------
-  # 8. Frontend Admin — Deploy
-  # ---------------------------------------------------------------------------
-  - id: deploy-admin
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: gcloud
-    args:
-      - run
-      - deploy
-      - ${_SERVICE_ADMIN}
-      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:${COMMIT_SHA}
-      - --region=${_REGION}
-      - --cpu=${_WEB_CPU}
-      - --memory=${_WEB_MEMORY}
-      - --allow-unauthenticated
-      - --project=${PROJECT_ID}
-    waitFor: [push-images]
-
-# Lista de imágenes a pushear a Artifact Registry
-images:
-  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:${COMMIT_SHA}
-  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:${COMMIT_SHA}
-  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:${COMMIT_SHA}
-
+      - -c
+      - |
+        set -euo pipefail
+        DEPLOY=(gcloud run deploy ${_SERVICE_API}
+          --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:${BUILD_ID}
           --region=${_REGION}
           --platform=managed
           --port=8080
           --cpu=${_API_CPU}
           --memory=${_API_MEMORY}
+          --max-instances=${_API_MAX_INSTANCES}
+          --set-secrets=DATABASE_URL=nara-database-url:latest,JWT_SECRET=nara-jwt-secret:latest,CRON_SECRET=nara-cron-secret:latest
+          --set-env-vars=NODE_ENV=production,RUN_MIGRATIONS=false,CLIENT_URL=${_USER_DOMAIN},ADMIN_URL=${_ADMIN_DOMAIN},BACKEND_URL=${_API_DOMAIN}
           --allow-unauthenticated
-          --set-secrets=DATABASE_URL=nara-database-url:latest,JWT_SECRET=nara-jwt-secret:latest
-          --set-env-vars=RUN_MIGRATIONS=true,NODE_ENV=production
           --quiet)
         if [ -n "${_CLOUD_SQL_INSTANCE}" ]; then
           DEPLOY+=(--add-cloudsql-instances=${_CLOUD_SQL_INSTANCE})
         fi
         "$${DEPLOY[@]}"
-    waitFor:
-      - build-api
+    waitFor: [migrate-db]
 
   # ---------------------------------------------------------------------------
-  # 3. Obtener URL pública de la API (para VITE_API_URL en frontends)
+  # 5b. Cloud Scheduler — asegura el job que dispara la limpieza de reservas
+  #     TTL cada minuto (reemplaza al cron in-process del backend, que no es
+  #     confiable con Cloud Run escalando a cero). Idempotente: actualiza si
+  #     ya existe, si no lo crea. El valor del secreto se lee en memoria del
+  #     build step y no se imprime en los logs.
   # ---------------------------------------------------------------------------
-  - id: get-api-url
+  - id: setup-scheduler
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: bash
     args:
       - -c
       - |
         set -euo pipefail
-        gcloud run services describe ${_SERVICE_API} \
-          --region=${_REGION} \
-          --format='value(status.url)' | tr -d '\n' > /workspace/api_url.txt
-        echo "API URL: $$(cat /workspace/api_url.txt)"
-    waitFor:
-      - deploy-api
+        CRON_SECRET=$$(gcloud secrets versions access latest --secret=nara-cron-secret)
+        set +x
+        if gcloud scheduler jobs describe ${_SERVICE_API}-ttl-cleanup --location=${_REGION} >/dev/null 2>&1; then
+          ACTION=update
+          HEADER_FLAG=--update-headers
+        else
+          ACTION=create
+          HEADER_FLAG=--headers
+        fi
+        gcloud scheduler jobs $${ACTION} http ${_SERVICE_API}-ttl-cleanup \
+          --location=${_REGION} \
+          --schedule="${_CRON_SCHEDULE}" \
+          --uri="${_API_DOMAIN}/api/v1/internal/cron/release-expired-stock" \
+          --http-method=POST \
+          "$${HEADER_FLAG}=X-Cron-Secret=$${CRON_SECRET}" \
+          --time-zone="Etc/UTC" \
+          --quiet
+    waitFor: [deploy-api]
 
   # ---------------------------------------------------------------------------
-  # 4. Frontend user — build con URL de la API
+  # 5. Frontend User — Build + Push + Deploy
   # ---------------------------------------------------------------------------
   - id: build-user
     name: gcr.io/cloud-builders/docker
@@ -202,18 +175,22 @@ images:
       - -c
       - |
         set -euo pipefail
-        API_URL=$$(cat /workspace/api_url.txt)
         docker build -f frontend-user/Dockerfile \
-          --build-arg "VITE_API_URL=$$API_URL" \
-          -t ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:${COMMIT_SHA} \
+          --build-arg "VITE_API_URL=${_API_DOMAIN}" \
+          -t ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:${BUILD_ID} \
           -t ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:latest \
+          --cache-from ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:latest \
           .
-    waitFor:
-      - get-api-url
+    waitFor: [deploy-api]
 
-  # ---------------------------------------------------------------------------
-  # 5. Frontend user — deploy
-  # ---------------------------------------------------------------------------
+  - id: push-user
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}
+    waitFor: [build-user]
+
   - id: deploy-user
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
@@ -221,7 +198,7 @@ images:
       - run
       - deploy
       - ${_SERVICE_USER}
-      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:${COMMIT_SHA}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:${BUILD_ID}
       - --region=${_REGION}
       - --platform=managed
       - --port=8080
@@ -229,11 +206,10 @@ images:
       - --memory=${_WEB_MEMORY}
       - --allow-unauthenticated
       - --quiet
-    waitFor:
-      - build-user
+    waitFor: [push-user]
 
   # ---------------------------------------------------------------------------
-  # 6. Frontend admin — build con URL de la API
+  # 6. Frontend Admin — Build + Push + Deploy
   # ---------------------------------------------------------------------------
   - id: build-admin
     name: gcr.io/cloud-builders/docker
@@ -242,18 +218,22 @@ images:
       - -c
       - |
         set -euo pipefail
-        API_URL=$$(cat /workspace/api_url.txt)
         docker build -f frontend-admin/Dockerfile \
-          --build-arg "VITE_API_URL=$$API_URL" \
-          -t ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:${COMMIT_SHA} \
+          --build-arg "VITE_API_URL=${_API_DOMAIN}" \
+          -t ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:${BUILD_ID} \
           -t ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:latest \
+          --cache-from ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:latest \
           .
-    waitFor:
-      - get-api-url
+    waitFor: [deploy-api]
 
-  # ---------------------------------------------------------------------------
-  # 7. Frontend admin — deploy
-  # ---------------------------------------------------------------------------
+  - id: push-admin
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}
+    waitFor: [build-admin]
+
   - id: deploy-admin
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
@@ -261,7 +241,7 @@ images:
       - run
       - deploy
       - ${_SERVICE_ADMIN}
-      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:${COMMIT_SHA}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:${BUILD_ID}
       - --region=${_REGION}
       - --platform=managed
       - --port=8080
@@ -269,31 +249,9 @@ images:
       - --memory=${_WEB_MEMORY}
       - --allow-unauthenticated
       - --quiet
-    waitFor:
-      - build-admin
+    waitFor: [push-admin]
 
-  # ---------------------------------------------------------------------------
-  # 8. Actualizar CORS del backend con URLs finales de user y admin
-  # ---------------------------------------------------------------------------
-  - id: update-api-env
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        set -euo pipefail
-        API_URL=$$(cat /workspace/api_url.txt)
-        USER_URL=$$(gcloud run services describe ${_SERVICE_USER} \
-          --region=${_REGION} --format='value(status.url)')
-        ADMIN_URL=$$(gcloud run services describe ${_SERVICE_ADMIN} \
-          --region=${_REGION} --format='value(status.url)')
-        echo "CLIENT_URL=$$USER_URL"
-        echo "ADMIN_URL=$$ADMIN_URL"
-        echo "BACKEND_URL=$$API_URL"
-        gcloud run services update ${_SERVICE_API} \
-          --region=${_REGION} \
-          --update-env-vars="CLIENT_URL=$$USER_URL,ADMIN_URL=$$ADMIN_URL,BACKEND_URL=$$API_URL" \
-          --quiet
-    waitFor:
-      - deploy-user
-      - deploy-admin
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:${BUILD_ID}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_USER}:${BUILD_ID}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_ADMIN}:${BUILD_ID}

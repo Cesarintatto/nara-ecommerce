@@ -9,14 +9,16 @@ RUN apk add --no-cache openssl
 WORKDIR /app
 
 # --- Dependencias ---
+# El schema de Prisma tiene que estar presente antes de "npm ci": el
+# postinstall del backend corre "prisma generate" automáticamente.
 FROM base AS deps
 COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/
+COPY backend/prisma ./backend/prisma/
 RUN npm ci -w backend
 
 # --- Build TypeScript + Prisma Client ---
 FROM deps AS builder
-COPY backend/prisma ./backend/prisma/
 COPY backend/tsconfig.json ./backend/
 COPY backend/src ./backend/src/
 WORKDIR /app/backend

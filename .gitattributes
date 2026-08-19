@@ -1,0 +1,5 @@
+# Los scripts que corren dentro de contenedores Linux necesitan LF sí o sí:
+# con CRLF, el shebang se rompe y el contenedor falla con
+# "no such file or directory" aunque el archivo exista.
+*.sh text eol=lf
+Dockerfile text eol=lf
