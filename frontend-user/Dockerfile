@@ -23,7 +23,9 @@ RUN npm run build
 
 FROM nginx:1.27-alpine AS runner
 
-COPY frontend-user/nginx.conf /etc/nginx/conf.d/default.conf
+ENV API_DOMAIN=https://api.naracol.com
+
+COPY frontend-user/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=builder /app/frontend-user/dist /usr/share/nginx/html
 
 EXPOSE 8080

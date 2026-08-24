@@ -204,6 +204,7 @@ steps:
       - --port=8080
       - --cpu=${_WEB_CPU}
       - --memory=${_WEB_MEMORY}
+      - --set-env-vars=API_DOMAIN=${_API_DOMAIN}
       - --allow-unauthenticated
       - --quiet
     waitFor: [push-user]

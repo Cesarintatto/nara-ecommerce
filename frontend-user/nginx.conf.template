@@ -8,6 +8,11 @@ server {
     gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml;
 
+    location = /sitemap.xml {
+        proxy_pass ${API_DOMAIN}/sitemap.xml;
+        proxy_ssl_server_name on;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }

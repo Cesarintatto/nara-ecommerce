@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import SizeAssistant from '../components/product/SizeAssistant.vue'
 import api from '../api/client'
 import { useCartStore } from '../store/cartStore'
+import { useMeta } from '../composables/useMeta'
 
 const route = useRoute()
 const router = useRouter()
@@ -70,6 +71,13 @@ watch(
     if (slug) loadProduct(slug)
   },
 )
+
+useMeta(() => ({
+  title: product.value?.name,
+  description: product.value?.description?.slice(0, 160),
+  image: product.value?.images?.[0],
+  path: route.path,
+}))
 </script>
 
 <template>

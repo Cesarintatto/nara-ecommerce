@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import routes from './routes';
+import { getSitemap } from './controllers/sitemap.controller';
 
 const app = express();
 
@@ -27,6 +28,8 @@ const globalLimiter = rateLimit({
   message: { error: 'Demasiadas peticiones, por favor intenta más tarde.' },
 });
 app.use('/api/', globalLimiter);
+
+app.get('/sitemap.xml', getSitemap);
 
 app.use('/api/v1', routes);
 

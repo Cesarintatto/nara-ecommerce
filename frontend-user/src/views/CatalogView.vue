@@ -3,6 +3,13 @@ import { ref, computed, onMounted } from 'vue'
 import FilterBar from '../components/catalog/FilterBar.vue'
 import ProductCard from '../components/catalog/ProductCard.vue'
 import api from '../api/client'
+import { useMeta } from '../composables/useMeta'
+
+useMeta(() => ({
+  title: 'Catálogo',
+  description: 'Descubre la colección completa de NARA: prendas diseñadas para tu ritmo y tu estilo.',
+  path: '/catalogo',
+}))
 
 const products = ref([])
 const activeCategory = ref('Todos')
