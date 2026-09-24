@@ -22,6 +22,11 @@
 #   - Instancia Cloud SQL (Postgres) creada
 #   - Secretos en Secret Manager: nara-database-url, nara-jwt-secret,
 #     nara-cron-secret (ver backend/.env.example)
+#   - Pagos Wompi: secretos nara-wompi-integrity-secret y
+#     nara-wompi-events-secret, más la llave pública en _WOMPI_PUBLIC_KEY.
+#     Si _WOMPI_PUBLIC_KEY está vacío, la API se despliega sin Wompi y el
+#     checkout responde 503.
+#     URL de eventos a registrar en Wompi: ${_API_DOMAIN}/api/v1/webhooks/wompi
 #   - La service account de Cloud Build / Cloud Run con permiso
 #     roles/secretmanager.secretAccessor sobre esos secretos
 #   - Load Balancer + certificado administrado apuntando a los 3 dominios
@@ -45,6 +50,8 @@ substitutions:
   _API_DOMAIN: https://api.naracol.com
   _USER_DOMAIN: https://www.naracol.com
   _ADMIN_DOMAIN: https://admin.naracol.com
+  # Llave pública de Wompi (pub_prod_... en producción). No es secreta.
+  _WOMPI_PUBLIC_KEY: ""
 
 options:
   logging: CLOUD_LOGGING_ONLY
@@ -122,10 +129,15 @@ steps:
           --cpu=${_API_CPU}
           --memory=${_API_MEMORY}
           --max-instances=${_API_MAX_INSTANCES}
-          --set-secrets=DATABASE_URL=nara-database-url:latest,JWT_SECRET=nara-jwt-secret:latest,CRON_SECRET=nara-cron-secret:latest
-          --set-env-vars=NODE_ENV=production,RUN_MIGRATIONS=false,CLIENT_URL=${_USER_DOMAIN},ADMIN_URL=${_ADMIN_DOMAIN},BACKEND_URL=${_API_DOMAIN}
           --allow-unauthenticated
           --quiet)
+        SECRETS="DATABASE_URL=nara-database-url:latest,JWT_SECRET=nara-jwt-secret:latest,CRON_SECRET=nara-cron-secret:latest"
+        ENV_VARS="NODE_ENV=production,RUN_MIGRATIONS=false,CLIENT_URL=${_USER_DOMAIN},ADMIN_URL=${_ADMIN_DOMAIN},BACKEND_URL=${_API_DOMAIN}"
+        if [ -n "${_WOMPI_PUBLIC_KEY}" ]; then
+          SECRETS+=",WOMPI_INTEGRITY_SECRET=nara-wompi-integrity-secret:latest,WOMPI_EVENTS_SECRET=nara-wompi-events-secret:latest"
+          ENV_VARS+=",WOMPI_PUBLIC_KEY=${_WOMPI_PUBLIC_KEY}"
+        fi
+        DEPLOY+=(--set-secrets=$${SECRETS} --set-env-vars=$${ENV_VARS})
         if [ -n "${_CLOUD_SQL_INSTANCE}" ]; then
           DEPLOY+=(--add-cloudsql-instances=${_CLOUD_SQL_INSTANCE})
         fi

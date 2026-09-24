@@ -1,37 +1,59 @@
 // /backend/src/controllers/webhook.controller.ts
 import { Request, Response } from 'express';
-import { Payment } from 'mercadopago';
-import { mpClient } from '../config/sdks';
+import { isWompiConfigured, verifyEventChecksum, WompiEvent } from '../config/wompi';
 import { OrderService } from '../services/order.service';
+import { StockService } from '../services/stock.service';
 
-export const handleMPWebhook = async (req: Request, res: Response) => {
-  const { query } = req;
-  const topic = query.topic || query.type;
+/**
+ * Eventos de Wompi. Wompi reintenta (30 min, 3 h y 24 h) cuando la respuesta
+ * no es 200, así que solo se responde distinto de 200 cuando un reintento
+ * puede servir (error interno) o la firma no es válida.
+ */
+export const handleWompiWebhook = async (req: Request, res: Response) => {
+  if (!isWompiConfigured()) {
+    console.error('[Webhook Wompi] Wompi no está configurado en el servidor');
+    return res.status(503).send('Not configured');
+  }
+
+  const body = req.body as WompiEvent;
+
+  if (!verifyEventChecksum(body, req.header('x-event-checksum'))) {
+    console.warn('[Webhook Wompi] Evento con firma inválida, se descarta');
+    return res.status(401).send('Invalid signature');
+  }
+
+  const transaction = body.data?.transaction;
+  if (body.event !== 'transaction.updated' || !transaction?.id || !transaction.reference) {
+    return res.status(200).send('OK');
+  }
 
   try {
-    // Solo procesamos notificaciones de pagos
-    if (topic === 'payment') {
-      const paymentId = String(query.id || query['data.id']);
-      
-      // Obtener detalles del pago desde MP
-      const payment = await new Payment(mpClient).get({ id: paymentId });
+    switch (transaction.status) {
+      case 'APPROVED':
+        console.log(`[Webhook Wompi] Pago aprobado: ${transaction.reference} (tx ${transaction.id})`);
+        await OrderService.finalizeOrder(
+          transaction.reference,
+          transaction.id,
+          Number(transaction.amount_in_cents),
+          transaction.currency || '',
+        );
+        break;
 
-      if (payment.status === 'approved') {
-        // preference_id es nuestra llave para encontrar la reserva de stock
-        const preferenceId = (payment as { preference_id?: string }).preference_id;
-        if (!preferenceId) {
-          return res.status(200).send('OK');
-        }
-        
-        console.log(`[Webhook] Pago aprobado para preferencia: ${preferenceId}`);
-        await OrderService.finalizeOrder(preferenceId, paymentId);
-      }
+      case 'DECLINED':
+      case 'VOIDED':
+      case 'ERROR':
+        console.log(`[Webhook Wompi] Pago ${transaction.status}: ${transaction.reference}, liberando reserva`);
+        await StockService.releaseCheckout(transaction.reference);
+        break;
+
+      default:
+        // PENDING u otros estados intermedios: se espera el evento final.
+        break;
     }
 
-    // Siempre responder 200 para confirmar recepción a Mercado Pago
     res.status(200).send('OK');
   } catch (error) {
-    console.error('[Webhook Error]', error);
+    console.error('[Webhook Wompi Error]', error);
     res.status(500).send('Internal Server Error');
   }
 };

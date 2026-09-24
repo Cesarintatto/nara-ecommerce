@@ -15,15 +15,16 @@ export class AdminService {
 
     let totalGrossRevenue = 0;
     let totalProductionCosts = 0;
-    let totalMPCommissions = 0;
+    let totalPaymentFees = 0;
 
     orders.forEach(order => {
       const revenue = Number(order.totalAmount);
       totalGrossRevenue += revenue;
 
-      // Cálculo de Comisión Mercado Pago (Ejemplo: 3.21% + 800 COP)
-      const commission = (revenue * 0.0321) + 800;
-      totalMPCommissions += commission;
+      // Comisión Wompi (plan agregador): 2.65% + $700 COP, más IVA (19%)
+      // sobre la comisión. Ajustar si Wompi cambia la tarifa del comercio.
+      const commission = (revenue * 0.0265 + 700) * 1.19;
+      totalPaymentFees += commission;
 
       // Sumar costos de producción/maquila de cada item
       order.items.forEach(item => {
@@ -31,12 +32,12 @@ export class AdminService {
       });
     });
 
-    const netProfit = totalGrossRevenue - totalProductionCosts - totalMPCommissions;
+    const netProfit = totalGrossRevenue - totalProductionCosts - totalPaymentFees;
 
     return {
       grossRevenue: totalGrossRevenue,
       productionCosts: totalProductionCosts,
-      mpCommissions: totalMPCommissions,
+      paymentFees: totalPaymentFees,
       netProfit: netProfit,
       marginPercentage: totalGrossRevenue > 0 ? (netProfit / totalGrossRevenue) * 100 : 0,
       totalSales: orders.length

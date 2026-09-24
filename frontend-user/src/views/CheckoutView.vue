@@ -130,8 +130,11 @@ const submit = async () => {
         :disabled="isSubmitting"
         class="w-full bg-nara-dark text-white py-4 rounded-xl hover:bg-nara-sand transition-colors uppercase tracking-widest font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {{ isSubmitting ? 'Procesando…' : 'Pagar con Mercado Pago' }}
+        {{ isSubmitting ? 'Procesando…' : 'Ir a pagar' }}
       </button>
     </form>
+    <p class="mt-4 text-xs text-center text-nara-dark/40">
+      Pago seguro con Wompi: tarjeta, PSE, Nequi o Bancolombia. Tus prendas quedan apartadas por 15 minutos.
+    </p>
   </div>
 </template>

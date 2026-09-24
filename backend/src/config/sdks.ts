@@ -1,11 +1,6 @@
 // /backend/src/config/sdks.ts
-import { MercadoPagoConfig, Preference } from 'mercadopago';
+// Los pagos van por Wompi vía API REST: ver ./wompi.ts
 import * as SibApiV3Sdk from '@getbrevo/brevo';
-
-// Mercado Pago Init
-export const mpClient = new MercadoPagoConfig({ 
-  accessToken: process.env.MP_ACCESS_TOKEN || '' 
-});
 
 // Brevo Init (Correos Transaccionales)
 export const brevoEmailInstance = new SibApiV3Sdk.TransactionalEmailsApi();

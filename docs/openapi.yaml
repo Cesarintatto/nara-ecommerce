@@ -2,7 +2,7 @@
 openapi: 3.0.0
 info:
   title: NARA E-commerce API
-  description: API para la gestión de catálogo, reservas de stock con TTL, integración con Mercado Pago y panel administrativo.
+  description: API para la gestión de catálogo, reservas de stock con TTL, pagos con Wompi y panel administrativo.
   version: 1.0.0
 
 servers:
@@ -47,38 +47,120 @@ paths:
                 $ref: '#/components/schemas/Product'
 
   # --- TRANSACCIONAL: RESERVAS Y CHECKOUT ---
-  /reservations:
+  /checkout:
     post:
-      summary: Crear reserva de stock (TTL 15 min) al iniciar checkout
-      description: Bloquea unidades temporalmente antes de redirigir a Mercado Pago.
-      body:
+      summary: Iniciar checkout (reserva de stock con TTL de 15 min + enlace de pago Wompi)
+      description: >
+        Reserva el stock de todos los items (todo o nada), calcula el total con
+        los precios de la base de datos (nunca los del cliente) y devuelve la URL
+        del Web Checkout de Wompi firmada con la firma de integridad
+        SHA256(reference + amountInCents + currency + expirationTime + integritySecret).
+        La transacción expira en Wompi al mismo tiempo que la reserva.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items, customerEmail, customerName, shippingAddress]
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [productId, quantity]
+                    properties:
+                      productId: { type: string }
+                      quantity: { type: integer, minimum: 1 }
+                customerEmail: { type: string, format: email }
+                customerName: { type: string }
+                shippingAddress:
+                  type: object
+                  properties:
+                    phone: { type: string }
+                    addressLine: { type: string }
+                    city: { type: string }
+                    department: { type: string }
+      responses:
+        '201':
+          description: Reserva creada y enlace de pago generado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkoutUrl: { type: string, format: uri, description: "URL de https://checkout.wompi.co/p/ con los parámetros firmados" }
+                  reference: { type: string, description: "Referencia única del pago (= Checkout.externalId)" }
+                  expiresAt: { type: string, format: date-time }
+        '400':
+          description: Datos inválidos, producto inexistente o stock insuficiente
+        '503':
+          description: Wompi no está configurado en el servidor
+
+  /checkout/transactions/{id}:
+    get:
+      summary: Consultar el estado de una transacción de Wompi
+      description: >
+        Usado por la página /gracias (Wompi agrega ?id=<transactionId> a la
+        redirect-url). Solo informa el estado; la orden se consolida
+        exclusivamente por el webhook.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Estado de la transacción
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [PENDING, APPROVED, DECLINED, VOIDED, ERROR] }
+                  reference: { type: string }
+        '404':
+          description: Transacción no encontrada
+
+  /webhooks/wompi:
+    post:
+      summary: Webhook de eventos de Wompi (transaction.updated)
+      description: >
+        Valida el checksum: SHA256(valores de signature.properties en orden +
+        timestamp + eventsSecret). Con firma inválida responde 401 y no toca
+        datos. APPROVED (y monto igual al del checkout) consolida la orden,
+        descuenta el inventario físico y envía el correo por Brevo.
+        DECLINED / VOIDED / ERROR liberan la reserva de inmediato.
+        Idempotente: eventos repetidos no duplican órdenes.
+      requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
               properties:
-                productId: { type: string }
-                quantity: { type: integer }
-                customerEmail: { type: string }
-      responses:
-        '201':
-          description: Reserva creada. Retorna ID de preferencia para MP.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  reservationId: { type: string }
-                  preferenceId: { type: string }
-
-  /webhooks/mercadopago:
-    post:
-      summary: Webhook de confirmación de pago
-      description: Recibe el estado 'approved' para consolidar la orden y liberar reserva.
+                event: { type: string, example: transaction.updated }
+                data:
+                  type: object
+                  properties:
+                    transaction:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        status: { type: string }
+                        reference: { type: string }
+                        amount_in_cents: { type: integer }
+                signature:
+                  type: object
+                  properties:
+                    properties: { type: array, items: { type: string } }
+                    checksum: { type: string }
+                timestamp: { type: integer }
       responses:
         '200':
-          description: Webhook procesado
+          description: Evento recibido (Wompi reintenta si la respuesta no es 200)
+        '401':
+          description: Firma inválida
 
   # --- ADMINISTRATIVO ---
   /admin/auth/login:

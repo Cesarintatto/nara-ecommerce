@@ -147,7 +147,7 @@ http://localhost:5173 — landing NARA (sin API aún).
 
 | Servicio | Variable | Cuándo lo necesitas |
 |----------|----------|---------------------|
-| Mercado Pago | `MP_ACCESS_TOKEN` | Checkout y pagos |
+| Wompi | `WOMPI_PUBLIC_KEY`, `WOMPI_INTEGRITY_SECRET`, `WOMPI_EVENTS_SECRET` | Checkout y pagos (ver `backend/.env.example`) |
 | Brevo | `BREVO_API_KEY` | Emails de confirmación y envío |
 
 Sin estas claves el catálogo, login y dashboard **sí funcionan**. Checkout y emails fallarán hasta configurarlos.

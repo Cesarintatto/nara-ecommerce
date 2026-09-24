@@ -17,23 +17,26 @@ export interface CartItemInput {
   quantity: number;
 }
 
+// Mismo valor que el expiration-time que se envía a Wompi
+export const RESERVATION_TTL_MINUTES = 15;
+
 export class StockService {
   /**
    * Reserva stock para todos los items del carrito en una sola transacción
    * (todo o nada) y crea el Checkout que los agrupa bajo una misma
-   * preferencia de Mercado Pago.
+   * referencia de pago de Wompi.
    * EARS: Cuando el usuario confirme el checkout, entonces reservar stock
    * de cada producto y crear el registro de Checkout.
    */
   static async createCheckoutReservation(
     items: CartItemInput[],
-    preferenceId: string,
+    reference: string,
+    amountInCents: number,
     customerEmail: string,
     customerName: string,
     shippingAddress: Prisma.InputJsonValue,
   ) {
-    const TTL_MINUTES = 15;
-    const expiresAt = new Date(Date.now() + TTL_MINUTES * 60 * 1000);
+    const expiresAt = new Date(Date.now() + RESERVATION_TTL_MINUTES * 60 * 1000);
 
     // Orden estable por productId: evita deadlocks si dos carritos
     // comparten productos y los procesan en orden distinto.
@@ -57,7 +60,8 @@ export class StockService {
 
       return tx.checkout.create({
         data: {
-          externalId: preferenceId,
+          externalId: reference,
+          amountInCents,
           customerEmail,
           customerName,
           shippingAddress,
@@ -74,15 +78,42 @@ export class StockService {
   }
 
   /**
+   * Libera un checkout y devuelve su stock al disponible. Idempotente y
+   * seguro frente a concurrencia (webhook de rechazo vs. cron de TTL vs.
+   * pago aprobado): el deleteMany "reclama" el checkout y, si otro proceso
+   * ya lo tomó, no se devuelve stock dos veces.
+   * EARS: Cuando Wompi reporte DECLINED / VOIDED / ERROR, entonces liberar
+   * la reserva de inmediato.
+   */
+  static async releaseCheckout(reference: string) {
+    return await prisma.$transaction(async (tx) => {
+      const checkout = await tx.checkout.findUnique({
+        where: { externalId: reference },
+        include: { reservations: true },
+      });
+      if (!checkout) return false;
+
+      const { count } = await tx.checkout.deleteMany({ where: { id: checkout.id } });
+      if (count === 0) return false;
+
+      for (const res of checkout.reservations) {
+        await tx.product.update({
+          where: { id: res.productId },
+          data: { stockAvailable: { increment: res.quantity } },
+        });
+      }
+      return true;
+    });
+  }
+
+  /**
    * Libera checkouts expirados y devuelve el stock reservado.
    * EARS: Cuando el TTL expire sin Webhook, entonces reincorporar al stock disponible.
    */
   static async releaseExpiredReservations() {
-    const now = new Date();
-
     const expiredCheckouts = await prisma.checkout.findMany({
-      where: { expiresAt: { lt: now } },
-      include: { reservations: true },
+      where: { expiresAt: { lt: new Date() } },
+      select: { externalId: true },
     });
 
     if (expiredCheckouts.length === 0) return;
@@ -90,15 +121,7 @@ export class StockService {
     console.log(`[TTL Worker] Liberando ${expiredCheckouts.length} checkouts expirados...`);
 
     for (const checkout of expiredCheckouts) {
-      await prisma.$transaction([
-        ...checkout.reservations.map((res) =>
-          prisma.product.update({
-            where: { id: res.productId },
-            data: { stockAvailable: { increment: res.quantity } },
-          }),
-        ),
-        prisma.checkout.delete({ where: { id: checkout.id } }),
-      ]);
+      await StockService.releaseCheckout(checkout.externalId);
     }
   }
 }

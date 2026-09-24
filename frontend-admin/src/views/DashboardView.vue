@@ -53,7 +53,7 @@ onMounted(async () => {
           title="Costos"
         />
         <div
-          :style="{ width: (stats.mpCommissions / stats.grossRevenue * 100) + '%' }"
+          :style="{ width: (stats.paymentFees / stats.grossRevenue * 100) + '%' }"
           class="bg-nara-dark/20"
           title="Comisiones"
         />
@@ -65,7 +65,7 @@ onMounted(async () => {
       </div>
       <div class="flex gap-6 mt-6 text-xs uppercase tracking-tighter text-nara-dark/60">
         <div class="flex items-center gap-2"><span class="w-3 h-3 bg-nara-sand/40 rounded-full" /> Maquila</div>
-        <div class="flex items-center gap-2"><span class="w-3 h-3 bg-nara-dark/20 rounded-full" /> Pasarela (MP)</div>
+        <div class="flex items-center gap-2"><span class="w-3 h-3 bg-nara-dark/20 rounded-full" /> Pasarela (Wompi)</div>
         <div class="flex items-center gap-2"><span class="w-3 h-3 bg-nara-olive rounded-full" /> Utilidad Neta</div>
       </div>
     </div>

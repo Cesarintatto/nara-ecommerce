@@ -53,7 +53,8 @@ model Category {
 
 model Checkout {
   id              String             @id @default(uuid())
-  externalId      String             @unique // ID de preferencia de Mercado Pago
+  externalId      String             @unique // Referencia de pago enviada a Wompi
+  amountInCents   Int                // Monto firmado en Wompi (COP x 100)
   customerEmail   String
   customerName    String
   shippingAddress Json
@@ -79,7 +80,7 @@ model Order {
   customerName     String
   status           OrderStatus @default(PENDING)
   totalAmount      Decimal     @db.Decimal(10, 2)
-  mercadopagoId    String?     @unique
+  paymentId        String?     @unique // ID de la transacción en Wompi
   trackingNumber   String?     // Guía de envío física
   shippingAddress  Json        // Datos de dirección
   createdAt        DateTime    @default(now())

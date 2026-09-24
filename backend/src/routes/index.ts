@@ -11,8 +11,8 @@ import {
   deleteAdminProduct,
   listCategories,
 } from '../controllers/admin-products.controller';
-import { createCheckout } from '../controllers/checkout.controller';
-import { handleMPWebhook } from '../controllers/webhook.controller';
+import { createCheckout, getTransactionStatus } from '../controllers/checkout.controller';
+import { handleWompiWebhook } from '../controllers/webhook.controller';
 import { releaseExpiredStock } from '../controllers/cron.controller';
 import { checkAuthLock } from '../middlewares/auth';
 import { requireAuth } from '../middlewares/jwtAuth';
@@ -37,7 +37,8 @@ router.patch('/admin/products/:id', requireAuth, updateAdminProduct);
 router.delete('/admin/products/:id', requireAuth, deleteAdminProduct);
 
 router.post('/checkout', createCheckout);
-router.post('/webhooks/mercadopago', handleMPWebhook);
+router.get('/checkout/transactions/:id', getTransactionStatus);
+router.post('/webhooks/wompi', handleWompiWebhook);
 
 router.post('/internal/cron/release-expired-stock', requireCronSecret, releaseExpiredStock);
 
