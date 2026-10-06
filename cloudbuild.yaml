@@ -42,7 +42,7 @@ substitutions:
   _SERVICE_API: nara-api
   _SERVICE_USER: nara-user
   _SERVICE_ADMIN: nara-admin
-  _CLOUD_SQL_INSTANCE: "" # Formato: "proyecto:region:instancia" (vacío = sin Cloud SQL)
+  _CLOUD_SQL_INSTANCE: "gen-lang-client-0695806857:southamerica-east1:nara-db-instance" # Formato: "proyecto:region:instancia" (vacío = sin Cloud SQL)
   _API_CPU: "1"
   _API_MEMORY: 512Mi
   _API_MAX_INSTANCES: "10"

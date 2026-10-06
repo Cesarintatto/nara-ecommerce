@@ -6,7 +6,7 @@ Todo el deploy lo hace `cloudbuild.yaml`: construye las 3 imágenes, corre las m
 ## 1. Antes del deploy (una sola vez)
 
 ### Contenido
-- [ ] Completar los datos legales en `frontend-user/src/legal/legalInfo.js` (todo lo que dice `[Por definir…]`: documento, dirección, correo, teléfono, envíos, cambios, garantía). En las páginas `/terminos` y `/privacidad` se ven resaltados en amarillo mientras falten.
+- [x] Completar los datos legales en `frontend-user/src/legal/legalInfo.js` (todo lo que dice `[Por definir…]`: documento, dirección, correo, teléfono, envíos, cambios, garantía). En las páginas `/terminos` y `/privacidad` se ven resaltados en amarillo mientras falten.
 - [ ] Revisar los textos legales con un abogado o contador (son una base conforme a Ley 1480/2011 y Ley 1581/2012, no asesoría legal).
 
 ### Google Cloud
@@ -15,8 +15,7 @@ Todo el deploy lo hace `cloudbuild.yaml`: construye las 3 imágenes, corre las m
       `gcloud storage buckets add-iam-policy-binding gs://nara-product-images --member=serviceAccount:1013000463393-compute@developer.gserviceaccount.com --role=roles/storage.objectCreator`
 - [ ] Secretos en Secret Manager (5): `nara-database-url`, `nara-jwt-secret`, `nara-cron-secret`, `nara-wompi-integrity-secret`, `nara-wompi-events-secret` (los de Wompi con valores `prod_…`).
 - [ ] La service account `1013000463393-compute@developer.gserviceaccount.com` con `roles/secretmanager.secretAccessor` sobre los 5 secretos.
-- [ ] Conocer el nombre de conexión de Cloud SQL (va en `_CLOUD_SQL_INSTANCE`):
-      `gcloud sql instances describe nara-db-instance --format="value(connectionName)"`
+- [x] Cloud SQL: `_CLOUD_SQL_INSTANCE` ya está fijado en `cloudbuild.yaml` (`gen-lang-client-0695806857:southamerica-east1:nara-db-instance`).
 
 ### Wompi (modo Producción)
 - [ ] `_WOMPI_PUBLIC_KEY` en `cloudbuild.yaml` = llave `pub_prod_…` ✅
@@ -37,12 +36,13 @@ git push origin main
 
 ## 3. Ejecutar el deploy
 
-Si hay un trigger de Cloud Build conectado a `main`, el push lo dispara. Si no, desde la raíz del repo:
+No hay trigger de Cloud Build: el deploy se lanza a mano desde la raíz del repo:
 
 ```bash
-gcloud builds submit --config cloudbuild.yaml --project gen-lang-client-0695806857 \
-  --substitutions=_CLOUD_SQL_INSTANCE="PROYECTO:REGION:INSTANCIA"
+gcloud builds submit --config cloudbuild.yaml --project gen-lang-client-0695806857
 ```
+
+Sube el código local (respetando `.gitignore`, así que los `.env` no viajan) y tarda unos 10–15 minutos.
 
 El pipeline corre las migraciones pendientes antes de desplegar:
 `20261006120000_catalog_categories` (6 categorías) y `20261006130000_privacy_consent` (registro de autorización de datos).
