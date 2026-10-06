@@ -11,6 +11,8 @@ interface CheckoutBody {
   customerEmail: string;
   customerName: string;
   shippingAddress: Prisma.InputJsonValue;
+  acceptedPolicies: boolean;
+  policyVersion: string;
 }
 
 const validateBody = (body: Partial<CheckoutBody>): string | null => {
@@ -34,6 +36,13 @@ const validateBody = (body: Partial<CheckoutBody>): string | null => {
   if (!body.shippingAddress || typeof body.shippingAddress !== 'object') {
     return 'La dirección de envío es obligatoria.';
   }
+  // Ley 1581 de 2012: la autorización debe ser previa, expresa e informada
+  if (body.acceptedPolicies !== true) {
+    return 'Debes aceptar los términos y condiciones y la política de tratamiento de datos.';
+  }
+  if (!body.policyVersion || typeof body.policyVersion !== 'string' || body.policyVersion.length > 40) {
+    return 'Falta la versión de la política aceptada.';
+  }
   return null;
 };
 
@@ -43,9 +52,17 @@ export const createCheckout = async (req: Request, res: Response) => {
     return res.status(503).json({ error: 'Los pagos no están disponibles en este momento.' });
   }
 
-  const { items, customerEmail, customerName, shippingAddress } = req.body as Partial<CheckoutBody>;
+  const { items, customerEmail, customerName, shippingAddress, acceptedPolicies, policyVersion } =
+    req.body as Partial<CheckoutBody>;
 
-  const validationError = validateBody({ items, customerEmail, customerName, shippingAddress });
+  const validationError = validateBody({
+    items,
+    customerEmail,
+    customerName,
+    shippingAddress,
+    acceptedPolicies,
+    policyVersion,
+  });
   if (validationError) {
     return res.status(400).json({ error: validationError });
   }
@@ -78,6 +95,7 @@ export const createCheckout = async (req: Request, res: Response) => {
       customerEmail!,
       customerName!,
       shippingAddress!,
+      { acceptedAt: new Date(), policyVersion: policyVersion! },
     );
 
     // 3. URL del Web Checkout firmada, que expira junto con la reserva

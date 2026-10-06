@@ -11,6 +11,7 @@ import {
   deleteAdminProduct,
   listCategories,
 } from '../controllers/admin-products.controller';
+import { receiveImage, uploadImage } from '../controllers/admin-uploads.controller';
 import { createCheckout, getTransactionStatus } from '../controllers/checkout.controller';
 import { handleWompiWebhook } from '../controllers/webhook.controller';
 import { releaseExpiredStock } from '../controllers/cron.controller';
@@ -35,6 +36,7 @@ router.get('/admin/products/:id', requireAuth, getAdminProduct);
 router.post('/admin/products', requireAuth, createAdminProduct);
 router.patch('/admin/products/:id', requireAuth, updateAdminProduct);
 router.delete('/admin/products/:id', requireAuth, deleteAdminProduct);
+router.post('/admin/uploads/images', requireAuth, receiveImage, uploadImage);
 
 router.post('/checkout', createCheckout);
 router.get('/checkout/transactions/:id', getTransactionStatus);

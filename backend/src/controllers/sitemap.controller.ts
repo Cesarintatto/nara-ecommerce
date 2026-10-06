@@ -18,6 +18,8 @@ export const getSitemap = async (_req: Request, res: Response) => {
   const urls = [
     urlEntry(`${SITE_URL}/`, 'daily', '1.0'),
     urlEntry(`${SITE_URL}/catalogo`, 'daily', '0.8'),
+    urlEntry(`${SITE_URL}/terminos`, 'yearly', '0.2'),
+    urlEntry(`${SITE_URL}/privacidad`, 'yearly', '0.2'),
     ...products.map((p) =>
       urlEntry(`${SITE_URL}/producto/${p.slug}`, 'weekly', '0.7', p.updatedAt.toISOString()),
     ),

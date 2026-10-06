@@ -36,7 +36,7 @@ model Product {
   costPrice       Decimal            @db.Decimal(10, 2) // Precio de lote/maquila para margen
   category        Category           @relation(fields: [categoryId], references: [id])
   categoryId      String
-  images          String[]           // URLs de OCI Object Storage
+  images          String[]           // URLs públicas en Google Cloud Storage (WebP)
   stockPhysical   Int                // Inventario real en bodega
   stockAvailable  Int                // Inventario menos reservas activas
   createdAt       DateTime           @default(now())
@@ -58,6 +58,9 @@ model Checkout {
   customerEmail   String
   customerName    String
   shippingAddress Json
+  // Autorización de tratamiento de datos (Ley 1581 de 2012): cuándo y qué versión aceptó
+  privacyAcceptedAt DateTime?
+  policyVersion     String?
   expiresAt       DateTime           // TTL de 15 minutos
   createdAt       DateTime           @default(now())
   reservations    StockReservation[]
@@ -83,6 +86,8 @@ model Order {
   paymentId        String?     @unique // ID de la transacción en Wompi
   trackingNumber   String?     // Guía de envío física
   shippingAddress  Json        // Datos de dirección
+  privacyAcceptedAt DateTime?  // Autorización de tratamiento de datos (Ley 1581)
+  policyVersion     String?    // Versión de términos/política aceptada
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
   items            OrderItem[]

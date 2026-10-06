@@ -18,7 +18,7 @@ async function main() {
     },
   });
 
-  const categories = ['Jeanes', 'Blusas', 'Vestidos', 'Camisas'];
+  const categories = ['Blusas', 'Pantalones', 'Jeans', 'Busos', 'Bodys', 'Vestidos'];
   const categoryMap: Record<string, string> = {};
 
   for (const name of categories) {
@@ -37,7 +37,7 @@ async function main() {
       description: 'Jean de tiro medio con stretch cómodo.',
       basePrice: 189000,
       costPrice: 95000,
-      categoryId: categoryMap.Jeanes,
+      categoryId: categoryMap.Jeans,
       images: ['https://images.unsplash.com/photo-1541099649105-f69ad21f3246?auto=format&fit=crop&q=80'],
       stockPhysical: 20,
       stockAvailable: 20,
@@ -70,7 +70,7 @@ async function main() {
       description: 'Camisa ligera con caída suave.',
       basePrice: 145000,
       costPrice: 72000,
-      categoryId: categoryMap.Camisas,
+      categoryId: categoryMap.Blusas,
       images: ['https://images.unsplash.com/photo-1598033129183-c4f50c7176c8?auto=format&fit=crop&q=80'],
       stockPhysical: 12,
       stockAvailable: 12,

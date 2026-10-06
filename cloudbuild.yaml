@@ -30,6 +30,10 @@
 #   - La service account de Cloud Build / Cloud Run con permiso
 #     roles/secretmanager.secretAccessor sobre esos secretos
 #   - Load Balancer + certificado administrado apuntando a los 3 dominios
+#   - Imágenes de productos: bucket de Cloud Storage (nombre en _GCS_BUCKET)
+#     con lectura pública, y la service account de Cloud Run con
+#     roles/storage.objectCreator sobre ese bucket. Si _GCS_BUCKET está
+#     vacío, la API se despliega sin subida de imágenes (responde 503).
 # =============================================================================
 
 substitutions:
@@ -51,7 +55,13 @@ substitutions:
   _USER_DOMAIN: https://www.naracol.com
   _ADMIN_DOMAIN: https://admin.naracol.com
   # Llave pública de Wompi (pub_prod_... en producción). No es secreta.
-  _WOMPI_PUBLIC_KEY: ""
+  _WOMPI_PUBLIC_KEY: "pub_prod_ZPx8ZqxyIKC0YNsVkTaPs5P1VS5iN2iC"
+  # Bucket de Cloud Storage para las imágenes de productos
+  _GCS_BUCKET: nara-product-images
+  # Correos transaccionales (Brevo): "true" cuando exista el secreto
+  # nara-brevo-api-key en Secret Manager y las plantillas 1 (confirmación de
+  # compra) y 2 (guía de envío) estén creadas en Brevo.
+  _BREVO_ENABLED: "false"
 
 options:
   logging: CLOUD_LOGGING_ONLY
@@ -75,7 +85,7 @@ steps:
       - --cache-from
       - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE_API}:latest
       - .
-    waitFor: ['-']
+    waitFor: ["-"]
 
   - id: push-api
     name: gcr.io/cloud-builders/docker
@@ -136,6 +146,12 @@ steps:
         if [ -n "${_WOMPI_PUBLIC_KEY}" ]; then
           SECRETS+=",WOMPI_INTEGRITY_SECRET=nara-wompi-integrity-secret:latest,WOMPI_EVENTS_SECRET=nara-wompi-events-secret:latest"
           ENV_VARS+=",WOMPI_PUBLIC_KEY=${_WOMPI_PUBLIC_KEY}"
+        fi
+        if [ "${_BREVO_ENABLED}" = "true" ]; then
+          SECRETS+=",BREVO_API_KEY=nara-brevo-api-key:latest"
+        fi
+        if [ -n "${_GCS_BUCKET}" ]; then
+          ENV_VARS+=",GCS_BUCKET=${_GCS_BUCKET}"
         fi
         DEPLOY+=(--set-secrets=$${SECRETS} --set-env-vars=$${ENV_VARS})
         if [ -n "${_CLOUD_SQL_INSTANCE}" ]; then

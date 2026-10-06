@@ -1,6 +1,7 @@
 <script setup>
 import Navbar from './components/layout/Navbar.vue';
 import Footer from './components/layout/Footer.vue';
+import ConsentBanner from './components/layout/ConsentBanner.vue';
 </script>
 
 <template>
@@ -14,6 +15,7 @@ import Footer from './components/layout/Footer.vue';
       </router-view>
     </main>
     <Footer />
+    <ConsentBanner />
   </div>
 </template>
 

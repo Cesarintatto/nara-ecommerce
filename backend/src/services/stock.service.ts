@@ -12,6 +12,11 @@ export class InsufficientStockError extends Error {
   }
 }
 
+export interface PrivacyConsent {
+  acceptedAt: Date;
+  policyVersion: string;
+}
+
 export interface CartItemInput {
   productId: string;
   quantity: number;
@@ -35,6 +40,7 @@ export class StockService {
     customerEmail: string,
     customerName: string,
     shippingAddress: Prisma.InputJsonValue,
+    consent: PrivacyConsent,
   ) {
     const expiresAt = new Date(Date.now() + RESERVATION_TTL_MINUTES * 60 * 1000);
 
@@ -65,6 +71,8 @@ export class StockService {
           customerEmail,
           customerName,
           shippingAddress,
+          privacyAcceptedAt: consent.acceptedAt,
+          policyVersion: consent.policyVersion,
           expiresAt,
           reservations: {
             create: items.map((item) => ({

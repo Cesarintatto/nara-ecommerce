@@ -59,6 +59,8 @@ export class OrderService {
           customerEmail: checkout.customerEmail,
           customerName: checkout.customerName,
           shippingAddress: checkout.shippingAddress as Prisma.InputJsonValue,
+          privacyAcceptedAt: checkout.privacyAcceptedAt,
+          policyVersion: checkout.policyVersion,
           items: {
             create: checkout.reservations.map((res) => ({
               productId: res.productId,

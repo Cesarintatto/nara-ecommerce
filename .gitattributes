@@ -1,3 +1,7 @@
+# Git guarda los archivos de texto con LF; cada sistema los saca con su fin de línea.
+# Evita que cambios solo de CRLF/LF aparezcan como archivos modificados.
+* text=auto
+
 # Los scripts que corren dentro de contenedores Linux necesitan LF sí o sí:
 # con CRLF, el shebang se rompe y el contenedor falla con
 # "no such file or directory" aunque el archivo exista.

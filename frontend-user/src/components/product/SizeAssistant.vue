@@ -1,24 +1,13 @@
 <!-- /frontend-user/src/components/product/SizeAssistant.vue -->
 <script setup>
 import { ref, computed } from 'vue';
+import { sizeFor } from '../../composables/useNaraSize';
 
 const waist = ref(70);
 const hip = ref(95);
 const showResult = ref(false);
 
-const calculateSize = computed(() => {
-  const w = waist.value;
-  const h = hip.value;
-
-  // Lógica de rangos NARA
-  if (w <= 68 && h <= 94) return '6 (XS)';
-  if (w <= 73 && h <= 99) return '8 (S)';
-  if (w <= 78 && h <= 104) return '10 (M)';
-  if (w <= 83 && h <= 109) return '12 (L)';
-  if (w <= 88 && h <= 114) return '14 (XL)';
-  
-  return 'Personalizada'; // Opción para contactar a soporte
-});
+const calculateSize = computed(() => sizeFor(waist.value, hip.value));
 
 const getFitMessage = computed(() => {
   if (calculateSize.value === 'Personalizada') return 'Tus medidas son únicas. Escríbenos para una asesoría a medida.';

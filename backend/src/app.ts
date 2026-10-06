@@ -7,6 +7,15 @@ import { getSitemap } from './controllers/sitemap.controller';
 
 const app = express();
 
+// Detrás del Load Balancer de Google + Cloud Run, la IP real de la clienta llega en
+// X-Forwarded-For ("<cliente>, <load-balancer>"). Sin esto, req.ip sería la del proxy y
+// el rate limit de abajo se compartiría entre TODAS las visitantes. 2 = LB + Cloud Run.
+// En local no hay proxies (0). Se puede ajustar con TRUST_PROXY_HOPS.
+const trustProxyHops = Number(
+  process.env.TRUST_PROXY_HOPS ?? (process.env.NODE_ENV === 'production' ? 2 : 0),
+);
+app.set('trust proxy', trustProxyHops);
+
 app.use(helmet());
 app.use(express.json());
 

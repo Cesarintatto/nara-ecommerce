@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCartStore } from '../store/cartStore'
 import api from '../api/client'
+import { POLICY_VERSION } from '../legal/legalInfo'
 
 const router = useRouter()
 const cart = useCartStore()
@@ -15,6 +16,9 @@ const form = ref({
   city: '',
   department: '',
 })
+
+// Autorización de tratamiento de datos (Ley 1581 de 2012): obligatoria para pagar
+const acceptedPolicies = ref(false)
 
 const isSubmitting = ref(false)
 const error = ref('')
@@ -46,10 +50,12 @@ const submit = async () => {
         city: form.value.city,
         department: form.value.department,
       },
+      acceptedPolicies: acceptedPolicies.value,
+      policyVersion: POLICY_VERSION,
     })
     window.location.href = data.checkoutUrl
   } catch (err) {
-    error.value = err.response?.data?.error || 'No se pudo iniciar el pago. Intentá de nuevo.'
+    error.value = err.response?.data?.error || 'No se pudo iniciar el pago. Intenta de nuevo.'
   } finally {
     isSubmitting.value = false
   }
@@ -122,6 +128,22 @@ const submit = async () => {
           />
         </div>
       </div>
+
+      <label class="flex items-start gap-3 rounded-xl border border-nara-dark/15 p-4 text-sm text-nara-dark/80 cursor-pointer">
+        <input
+          v-model="acceptedPolicies"
+          type="checkbox"
+          required
+          class="mt-0.5 h-4 w-4 shrink-0 accent-nara-dark"
+        />
+        <span>
+          Acepto los
+          <router-link to="/terminos" target="_blank" class="underline underline-offset-2">Términos y condiciones</router-link>
+          y autorizo el tratamiento de mis datos personales según la
+          <router-link to="/privacidad" target="_blank" class="underline underline-offset-2">Política de tratamiento de datos</router-link>
+          (Ley 1581 de 2012).
+        </span>
+      </label>
 
       <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
 

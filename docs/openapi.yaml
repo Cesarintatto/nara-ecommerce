@@ -62,7 +62,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [items, customerEmail, customerName, shippingAddress]
+              required: [items, customerEmail, customerName, shippingAddress, acceptedPolicies, policyVersion]
               properties:
                 items:
                   type: array
@@ -81,6 +81,13 @@ paths:
                     addressLine: { type: string }
                     city: { type: string }
                     department: { type: string }
+                acceptedPolicies:
+                  type: boolean
+                  enum: [true]
+                  description: La clienta aceptó los términos y la política de tratamiento de datos (Ley 1581 de 2012)
+                policyVersion:
+                  type: string
+                  description: Versión de los textos legales aceptados (p. ej. 2026-10-06); se guarda con la orden como prueba de la autorización
       responses:
         '201':
           description: Reserva creada y enlace de pago generado
@@ -93,7 +100,7 @@ paths:
                   reference: { type: string, description: "Referencia única del pago (= Checkout.externalId)" }
                   expiresAt: { type: string, format: date-time }
         '400':
-          description: Datos inválidos, producto inexistente o stock insuficiente
+          description: Datos inválidos, sin aceptación de políticas, producto inexistente o stock insuficiente
         '503':
           description: Wompi no está configurado en el servidor
 
@@ -183,6 +190,48 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FinancialStats'
+
+  /admin/uploads/images:
+    post:
+      summary: Subir una imagen de producto a Google Cloud Storage
+      description: >
+        Recibe una imagen (JPG, PNG o WebP, máx. 15 MB), la normaliza a máx.
+        1600×2000 px, la convierte a WebP y la guarda en el bucket GCS_BUCKET,
+        en la carpeta de su categoría (products/<categoria>/<uuid>.webp).
+        Devuelve la URL pública, que el admin agrega a Product.images.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                categoryId:
+                  type: string
+                  description: Categoría de la prenda; define la carpeta en el bucket (sin categoría → sin-categoria)
+                image:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Imagen subida
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                    example: https://storage.googleapis.com/nara-product-images/products/2026/10/0f2c….webp
+        '400':
+          description: Falta el archivo, el formato no es válido, supera 15 MB o la categoría no existe
+        '401':
+          description: No autorizado
+        '503':
+          description: GCS_BUCKET no está configurado en el servidor
 
   /admin/orders/{id}/tracking:
     patch:

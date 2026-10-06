@@ -55,6 +55,30 @@ interface CheckoutUrlParams {
  * El expiration-time coincide con el TTL de la reserva de stock: pasado ese
  * momento Wompi ya no deja pagar, así nunca se cobra una reserva liberada.
  */
+/**
+ * El firewall de Wompi (CloudFront) responde 403 si la redirect-url apunta a
+ * una dirección local (localhost, 127.0.0.1…). En desarrollo se omite: Wompi
+ * muestra su propia pantalla de resultado y /gracias se puede abrir a mano con
+ * ?id=<transactionId>. En producción (https://www.naracol.com) siempre se envía.
+ */
+export const isPublicRedirectUrl = (url: string): boolean => {
+  try {
+    const { protocol, hostname } = new URL(url);
+    const isLocal =
+      hostname === 'localhost' ||
+      hostname.endsWith('.localhost') ||
+      hostname === '::1' ||
+      hostname === '[::1]' ||
+      /^127\./.test(hostname) ||
+      /^10\./.test(hostname) ||
+      /^192\.168\./.test(hostname) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname);
+    return (protocol === 'https:' || protocol === 'http:') && !isLocal;
+  } catch {
+    return false;
+  }
+};
+
 export const buildCheckoutUrl = (p: CheckoutUrlParams): string => {
   const { publicKey, integritySecret } = env();
   const expirationTime = p.expiresAt.toISOString();
@@ -72,10 +96,18 @@ export const buildCheckoutUrl = (p: CheckoutUrlParams): string => {
       integritySecret,
     ),
     'expiration-time': expirationTime,
-    'redirect-url': p.redirectUrl,
     'customer-data:email': p.customerEmail,
     'customer-data:full-name': p.customerName,
   });
+
+  if (isPublicRedirectUrl(p.redirectUrl)) {
+    params.set('redirect-url', p.redirectUrl);
+  } else {
+    console.warn(
+      `[Wompi] redirect-url local omitida (${p.redirectUrl}): Wompi bloquea direcciones locales. ` +
+        'Al pagar, abre /gracias?id=<id de la transacción> para ver el resultado.',
+    );
+  }
 
   return `${WOMPI_CHECKOUT_URL}?${params.toString()}`;
 };
