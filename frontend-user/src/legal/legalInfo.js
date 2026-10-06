@@ -27,9 +27,9 @@ export const LEGAL = {
   // Condiciones comerciales
   shippingCoverage: 'todo el territorio colombiano',
   shippingCost: 'De acuerdo con la tarifa de la empresa de envíos',
-  shippingTime: 'tiempo de entrega estimado: 3 a 5 días hábiles',
-  sizeExchange: 'política de cambios por talla, p. ej. dentro de los 15 días siguientes a la entrega',
-  warrantyTerm: 'término de la garantía, 3 meses',
+  shippingTime: '3 a 5 días hábiles',
+  sizeExchange: 'dentro de los 15 días siguientes a la entrega',
+  warrantyTerm: 'tres (3) meses',
 }
 
 // true si el valor aún es un marcador pendiente (se resalta en pantalla)
