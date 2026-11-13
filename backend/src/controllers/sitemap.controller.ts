@@ -10,19 +10,21 @@ const urlEntry = (loc: string, changefreq: string, priority: string, lastmod?: s
   `<url><loc>${escapeXml(loc)}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ''}<changefreq>${changefreq}</changefreq><priority>${priority}</priority></url>`;
 
 export const getSitemap = async (_req: Request, res: Response) => {
-  const products = await prisma.product.findMany({
-    select: { slug: true, updatedAt: true },
-    orderBy: { updatedAt: 'desc' },
-  });
+  const [sections, products] = await Promise.all([
+    prisma.section.findMany({ where: { active: true }, select: { slug: true, updatedAt: true } }),
+    prisma.product.findMany({
+      where: { active: true, OR: [{ sectionId: null }, { section: { active: true } }] },
+      select: { slug: true, updatedAt: true },
+      orderBy: { updatedAt: 'desc' },
+    }),
+  ]);
 
   const urls = [
     urlEntry(`${SITE_URL}/`, 'daily', '1.0'),
-    urlEntry(`${SITE_URL}/catalogo`, 'daily', '0.8'),
+    ...sections.map((s) => urlEntry(`${SITE_URL}/seccion/${s.slug}`, 'weekly', '0.8', s.updatedAt.toISOString())),
+    ...products.map((p) => urlEntry(`${SITE_URL}/producto/${p.slug}`, 'weekly', '0.7', p.updatedAt.toISOString())),
     urlEntry(`${SITE_URL}/terminos`, 'yearly', '0.2'),
     urlEntry(`${SITE_URL}/privacidad`, 'yearly', '0.2'),
-    ...products.map((p) =>
-      urlEntry(`${SITE_URL}/producto/${p.slug}`, 'weekly', '0.7', p.updatedAt.toISOString()),
-    ),
   ].join('');
 
   res.set('Content-Type', 'application/xml; charset=UTF-8');

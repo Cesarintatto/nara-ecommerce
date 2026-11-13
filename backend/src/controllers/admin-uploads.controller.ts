@@ -1,11 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import multer from 'multer';
-import { prisma } from '../lib/prisma';
 import {
-  uploadProductImage,
+  uploadImage as uploadToStorage,
   isStorageConfigured,
   StorageNotConfiguredError,
   InvalidImageError,
+  UPLOAD_FOLDERS,
+  UploadFolder,
 } from '../services/storage.service';
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB (fotos del celular)
@@ -35,6 +36,7 @@ export const receiveImage = (req: Request, res: Response, next: NextFunction) =>
   });
 };
 
+// Campo opcional "folder": banners | sections | products (define la carpeta y el tamaño máximo)
 export const uploadImage = async (req: Request, res: Response) => {
   if (!isStorageConfigured()) {
     return res.status(503).json({ error: 'El almacenamiento de imágenes no está configurado (GCS_BUCKET)' });
@@ -43,33 +45,20 @@ export const uploadImage = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Sube una imagen JPG, PNG o WebP en el campo "image"' });
   }
 
-  // Categoría de la prenda (campo "categoryId" del formulario): define la carpeta en el bucket
-  const categoryId = typeof req.body?.categoryId === 'string' ? req.body.categoryId : '';
-  let categoryName: string | null = null;
-  if (categoryId) {
-    const category = await prisma.category.findUnique({ where: { id: categoryId } });
-    if (!category) {
-      return res.status(400).json({ error: 'La categoría seleccionada no existe' });
-    }
-    categoryName = category.name;
+  const rawFolder = typeof req.body?.folder === 'string' ? req.body.folder : 'products';
+  if (!UPLOAD_FOLDERS.includes(rawFolder as UploadFolder)) {
+    return res.status(400).json({ error: `"folder" debe ser uno de: ${UPLOAD_FOLDERS.join(', ')}` });
   }
 
   try {
-    const url = await uploadProductImage(req.file.buffer, categoryName);
+    const url = await uploadToStorage(req.file.buffer, rawFolder as UploadFolder);
     return res.status(201).json({ url });
   } catch (err) {
-    if (err instanceof InvalidImageError) {
-      return res.status(400).json({ error: err.message });
-    }
-    if (err instanceof StorageNotConfiguredError) {
-      return res.status(503).json({ error: err.message });
-    }
+    if (err instanceof InvalidImageError) return res.status(400).json({ error: err.message });
+    if (err instanceof StorageNotConfiguredError) return res.status(503).json({ error: err.message });
     console.error('[uploads] Error subiendo imagen a GCS:', err);
-    // En desarrollo se muestra el motivo real (credenciales, bucket inexistente, permisos…)
     const detail =
       process.env.NODE_ENV !== 'production' && err instanceof Error ? ` Detalle: ${err.message}` : '';
-    return res
-      .status(500)
-      .json({ error: `No se pudo subir la imagen. Revisa el bucket y sus permisos.${detail}` });
+    return res.status(500).json({ error: `No se pudo subir la imagen. Revisa el bucket y sus permisos.${detail}` });
   }
 };

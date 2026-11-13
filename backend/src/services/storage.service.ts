@@ -1,10 +1,12 @@
 // /backend/src/services/storage.service.ts
-// Imágenes de productos en Google Cloud Storage.
+// Imágenes en Google Cloud Storage.
 //
-// Cada imagen subida desde el admin se normaliza (orientación, máx. 1600×2000)
-// y se convierte a WebP antes de guardarse en el bucket GCS_BUCKET, en la
-// carpeta de su categoría: products/<categoria>/<uuid>.webp (p. ej.
-// products/blusas/…). Devuelve la URL pública que se guarda en Product.images.
+// Cada imagen subida desde el admin se normaliza (orientación EXIF y tamaño
+// máximo según su uso) y se convierte a WebP antes de guardarse en GCS_BUCKET:
+//   banners/<uuid>.webp   → carrusel del home (hasta 2400 px de ancho)
+//   sections/<uuid>.webp  → portadas de sección
+//   products/<uuid>.webp  → fotos de producto
+// Devuelve la URL pública que se guarda en la base de datos.
 //
 // Credenciales:
 //   - Cloud Run: la service account del servicio (Application Default
@@ -16,6 +18,17 @@ import { Storage } from '@google-cloud/storage';
 import sharp from 'sharp';
 
 const storage = new Storage();
+
+export const UPLOAD_FOLDERS = ['banners', 'sections', 'products'] as const;
+export type UploadFolder = (typeof UPLOAD_FOLDERS)[number];
+
+const MAX_SIZE: Record<UploadFolder, { width: number; height: number }> = {
+  banners: { width: 2400, height: 1600 },
+  sections: { width: 1600, height: 1600 },
+  products: { width: 1600, height: 2000 },
+};
+
+const WEBP_QUALITY = 82;
 
 export class StorageNotConfiguredError extends Error {
   constructor() {
@@ -29,10 +42,6 @@ export class InvalidImageError extends Error {
   }
 }
 
-const MAX_WIDTH = 1600;
-const MAX_HEIGHT = 2000;
-const WEBP_QUALITY = 82;
-
 function getBucketName(): string {
   const bucket = process.env.GCS_BUCKET?.trim();
   if (!bucket) throw new StorageNotConfiguredError();
@@ -43,32 +52,22 @@ export function isStorageConfigured(): boolean {
   return Boolean(process.env.GCS_BUCKET?.trim());
 }
 
-// "Bodys" → "bodys", "Pantalones" → "pantalones"; sin categoría → "sin-categoria"
-export function categoryFolder(categoryName?: string | null): string {
-  const slug = (categoryName || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-  return slug || 'sin-categoria';
-}
-
-export async function uploadProductImage(buffer: Buffer, categoryName?: string | null): Promise<string> {
+export async function uploadImage(buffer: Buffer, folder: UploadFolder): Promise<string> {
   const bucketName = getBucketName();
+  const { width, height } = MAX_SIZE[folder];
 
   let webp: Buffer;
   try {
     webp = await sharp(buffer)
       .rotate() // respeta la orientación EXIF de las fotos del celular
-      .resize({ width: MAX_WIDTH, height: MAX_HEIGHT, fit: 'inside', withoutEnlargement: true })
+      .resize({ width, height, fit: 'inside', withoutEnlargement: true })
       .webp({ quality: WEBP_QUALITY })
       .toBuffer();
   } catch {
     throw new InvalidImageError();
   }
 
-  const objectName = `products/${categoryFolder(categoryName)}/${randomUUID()}.webp`;
+  const objectName = `${folder}/${randomUUID()}.webp`;
 
   await storage
     .bucket(bucketName)

@@ -1,207 +1,339 @@
-# /docs/openapi.yaml
-openapi: 3.0.0
+openapi: 3.0.3
 info:
-  title: NARA E-commerce API
-  description: API para la gestión de catálogo, reservas de stock con TTL, pagos con Wompi y panel administrativo.
-  version: 1.0.0
-
+  title: Naracol Estudio API
+  version: 2.0.0
+  description: |
+    Catálogo de diseño e impresión 3D. Los pedidos se hacen por WhatsApp,
+    así que no hay carrito ni pagos. Todo el contenido se administra
+    desde /admin (JWT Bearer).
 servers:
-  - url: https://api.nara-culture.com/v1
-    description: Servidor de Producción
+  - url: /api/v1
+
+tags:
+  - name: Público
+  - name: Admin
 
 paths:
-  # --- PÚBLICO: CATÁLOGO ---
-  /products:
+  /health:
     get:
-      summary: Listar productos con filtros
-      parameters:
-        - name: category
-          in: query
-          schema:
-            type: string
+      tags: [Público]
+      summary: Estado del API y de la base de datos
+      responses:
+        '200': { description: OK }
+        '503': { description: Base de datos no disponible }
+
+  /banners:
+    get:
+      tags: [Público]
+      summary: Banners activos y vigentes del carrusel, en orden
       responses:
         '200':
-          description: Lista de productos obtenida con éxito
+          description: Lista de banners
           content:
             application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Product'
+              schema: { type: array, items: { $ref: '#/components/schemas/PublicBanner' } }
+
+  /sections:
+    get:
+      tags: [Público]
+      summary: Secciones activas con su paleta de colores disponibles
+      responses:
+        '200':
+          description: Lista de secciones
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/SectionOverview' } }
+
+  /sections/{slug}:
+    get:
+      tags: [Público]
+      summary: Detalle de una sección con sus productos activos
+      parameters: [{ $ref: '#/components/parameters/Slug' }]
+      responses:
+        '200':
+          description: Sección
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SectionDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /products:
+    get:
+      tags: [Público]
+      summary: Productos visibles (máx. 60)
+      parameters:
+        - in: query
+          name: featured
+          schema: { type: boolean }
+          description: Solo destacados
+      responses:
+        '200':
+          description: Lista de productos
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/ProductCard' } }
 
   /products/{slug}:
     get:
-      summary: Detalle de producto por slug
-      parameters:
-        - name: slug
-          in: path
-          required: true
-          schema:
-            type: string
+      tags: [Público]
+      summary: Detalle de producto con sus colores disponibles
+      parameters: [{ $ref: '#/components/parameters/Slug' }]
       responses:
         '200':
-          description: Detalle del producto
+          description: Producto
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Product'
+              schema: { $ref: '#/components/schemas/ProductDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
-  # --- TRANSACCIONAL: RESERVAS Y CHECKOUT ---
-  /checkout:
-    post:
-      summary: Iniciar checkout (reserva de stock con TTL de 15 min + enlace de pago Wompi)
-      description: >
-        Reserva el stock de todos los items (todo o nada), calcula el total con
-        los precios de la base de datos (nunca los del cliente) y devuelve la URL
-        del Web Checkout de Wompi firmada con la firma de integridad
-        SHA256(reference + amountInCents + currency + expirationTime + integritySecret).
-        La transacción expira en Wompi al mismo tiempo que la reserva.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [items, customerEmail, customerName, shippingAddress, acceptedPolicies, policyVersion]
-              properties:
-                items:
-                  type: array
-                  items:
-                    type: object
-                    required: [productId, variantId, quantity]
-                    properties:
-                      productId: { type: string }
-                      variantId: { type: string, description: "Talla elegida (ProductVariant.id)" }
-                      quantity: { type: integer, minimum: 1 }
-                customerEmail: { type: string, format: email }
-                customerName: { type: string }
-                shippingAddress:
-                  type: object
-                  properties:
-                    phone: { type: string }
-                    addressLine: { type: string }
-                    city: { type: string }
-                    department: { type: string }
-                acceptedPolicies:
-                  type: boolean
-                  enum: [true]
-                  description: La clienta aceptó los términos y la política de tratamiento de datos (Ley 1581 de 2012)
-                policyVersion:
-                  type: string
-                  description: Versión de los textos legales aceptados (p. ej. 2026-10-06); se guarda con la orden como prueba de la autorización
-      responses:
-        '201':
-          description: Reserva creada y enlace de pago generado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  checkoutUrl: { type: string, format: uri, description: "URL de https://checkout.wompi.co/p/ con los parámetros firmados" }
-                  reference: { type: string, description: "Referencia única del pago (= Checkout.externalId)" }
-                  expiresAt: { type: string, format: date-time }
-        '400':
-          description: Datos inválidos, sin aceptación de políticas, producto inexistente o stock insuficiente
-        '503':
-          description: Wompi no está configurado en el servidor
-
-  /checkout/transactions/{id}:
+  /settings:
     get:
-      summary: Consultar el estado de una transacción de Wompi
-      description: >
-        Usado por la página /gracias (Wompi agrega ?id=<transactionId> a la
-        redirect-url). Solo informa el estado; la orden se consolida
-        exclusivamente por el webhook.
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
+      tags: [Público]
+      summary: Ajustes públicos (WhatsApp, mensaje por defecto, redes)
       responses:
         '200':
-          description: Estado de la transacción
+          description: Ajustes
           content:
             application/json:
-              schema:
-                type: object
-                properties:
-                  status: { type: string, enum: [PENDING, APPROVED, DECLINED, VOIDED, ERROR] }
-                  reference: { type: string }
-        '404':
-          description: Transacción no encontrada
+              schema: { $ref: '#/components/schemas/Settings' }
 
-  /webhooks/wompi:
-    post:
-      summary: Webhook de eventos de Wompi (transaction.updated)
-      description: >
-        Valida el checksum: SHA256(valores de signature.properties en orden +
-        timestamp + eventsSecret). Con firma inválida responde 401 y no toca
-        datos. APPROVED (y monto igual al del checkout) consolida la orden,
-        descuenta el inventario físico y envía el correo por Brevo.
-        DECLINED / VOIDED / ERROR liberan la reserva de inmediato.
-        Idempotente: eventos repetidos no duplican órdenes.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                event: { type: string, example: transaction.updated }
-                data:
-                  type: object
-                  properties:
-                    transaction:
-                      type: object
-                      properties:
-                        id: { type: string }
-                        status: { type: string }
-                        reference: { type: string }
-                        amount_in_cents: { type: integer }
-                signature:
-                  type: object
-                  properties:
-                    properties: { type: array, items: { type: string } }
-                    checksum: { type: string }
-                timestamp: { type: integer }
-      responses:
-        '200':
-          description: Evento recibido (Wompi reintenta si la respuesta no es 200)
-        '401':
-          description: Firma inválida
-
-  # --- ADMINISTRATIVO ---
   /admin/auth/login:
     post:
-      summary: Login administrativo con bloqueo preventivo
+      tags: [Admin]
+      summary: Iniciar sesión (bloqueo de 30 min tras 5 intentos fallidos)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
       responses:
-        '200':
-          description: Token JWT generado
-        '401':
-          description: Credenciales inválidas (Suma al contador de bloqueos)
+        '200': { description: 'Token JWT (8 h) y usuario' }
+        '401': { description: Credenciales inválidas }
+        '423': { description: Cuenta bloqueada temporalmente }
 
-  /admin/dashboard/stats:
+  /admin/summary:
     get:
-      summary: Métricas de Margen Neto y Rotación
-      security:
-        - BearerAuth: []
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Conteos para el inicio del admin
+      responses:
+        '200': { description: 'banners, activeBanners, sections, products, colors, soldOutColors' }
+
+  /admin/banners:
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Todos los banners (incluye inactivos y fuera de fecha)
+      responses: { '200': { description: Lista } }
+    post:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Crear banner (se agrega al final)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BannerInput' }
+      responses:
+        '201': { description: Creado }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /admin/banners/order:
+    patch:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Reordenar banners
+      requestBody: { $ref: '#/components/requestBodies/Reorder' }
+      responses: { '204': { description: Reordenado } }
+
+  /admin/banners/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    patch:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Editar banner (parcial)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BannerInput' }
+      responses: { '200': { description: Actualizado }, '404': { $ref: '#/components/responses/NotFound' } }
+    delete:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Eliminar banner
+      responses: { '204': { description: Eliminado } }
+
+  /admin/colors:
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Biblioteca de colores de filamento, con conteo de uso
+      responses: { '200': { description: Lista } }
+    post:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Crear color
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ColorInput' }
+      responses: { '201': { description: Creado }, '409': { description: Nombre repetido } }
+
+  /admin/colors/order:
+    patch:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Reordenar colores
+      requestBody: { $ref: '#/components/requestBodies/Reorder' }
+      responses: { '204': { description: Reordenado } }
+
+  /admin/colors/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    patch:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Editar color. available=false lo oculta de todas las paletas.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ColorInput' }
+      responses: { '200': { description: Actualizado } }
+    delete:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Eliminar color (se quita de secciones y productos)
+      responses: { '204': { description: Eliminado } }
+
+  /admin/sections:
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Todas las secciones con su paleta y número de productos
+      responses: { '200': { description: Lista } }
+    post:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Crear sección
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SectionInput' }
+      responses: { '201': { description: Creada }, '409': { description: Slug repetido } }
+
+  /admin/sections/order:
+    patch:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Reordenar secciones
+      requestBody: { $ref: '#/components/requestBodies/Reorder' }
+      responses: { '204': { description: Reordenado } }
+
+  /admin/sections/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Sección por id
+      responses: { '200': { description: Sección } }
+    patch:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Editar sección. Si se envía colorIds, reemplaza la paleta en ese orden.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SectionInput' }
+      responses: { '200': { description: Actualizada } }
+    delete:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Eliminar sección (sus productos quedan sin sección)
+      responses: { '204': { description: Eliminada } }
+
+  /admin/products:
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Todos los productos
+      parameters:
+        - in: query
+          name: sectionId
+          schema: { type: string }
+      responses: { '200': { description: Lista } }
+    post:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Crear producto
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductInput' }
+      responses: { '201': { description: Creado }, '409': { description: Slug repetido } }
+
+  /admin/products/order:
+    patch:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Reordenar productos
+      requestBody: { $ref: '#/components/requestBodies/Reorder' }
+      responses: { '204': { description: Reordenado } }
+
+  /admin/products/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Producto por id
+      responses: { '200': { description: Producto } }
+    patch:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Editar producto. Si se envía colorIds, reemplaza sus colores en ese orden.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductInput' }
+      responses: { '200': { description: Actualizado } }
+    delete:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Eliminar producto
+      responses: { '204': { description: Eliminado } }
+
+  /admin/settings:
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Ajustes
       responses:
         '200':
+          description: Ajustes
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/FinancialStats'
+              schema: { $ref: '#/components/schemas/Settings' }
+    patch:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Actualizar ajustes (solo claves conocidas)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Settings' }
+      responses: { '200': { description: Ajustes actualizados }, '400': { $ref: '#/components/responses/BadRequest' } }
 
   /admin/uploads/images:
     post:
-      summary: Subir una imagen de producto a Google Cloud Storage
-      description: >
-        Recibe una imagen (JPG, PNG o WebP, máx. 15 MB), la normaliza a máx.
-        1600×2000 px, la convierte a WebP y la guarda en el bucket GCS_BUCKET,
-        en la carpeta de su categoría (products/<categoria>/<uuid>.webp).
-        Devuelve la URL pública, que el admin agrega a Product.images.
-      security:
-        - BearerAuth: []
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Subir imagen a GCS (se convierte a WebP)
       requestBody:
         required: true
         content:
@@ -210,85 +342,163 @@ paths:
               type: object
               required: [image]
               properties:
-                categoryId:
-                  type: string
-                  description: Categoría de la prenda; define la carpeta en el bucket (sin categoría → sin-categoria)
-                image:
-                  type: string
-                  format: binary
+                image: { type: string, format: binary, description: 'JPG, PNG o WebP, máx. 15 MB' }
+                folder: { type: string, enum: [banners, sections, products], default: products }
       responses:
         '201':
-          description: Imagen subida
+          description: URL pública
           content:
             application/json:
-              schema:
-                type: object
-                properties:
-                  url:
-                    type: string
-                    example: https://storage.googleapis.com/nara-product-images/products/2026/10/0f2c….webp
-        '400':
-          description: Falta el archivo, el formato no es válido, supera 15 MB o la categoría no existe
-        '401':
-          description: No autorizado
-        '503':
-          description: GCS_BUCKET no está configurado en el servidor
-
-  /admin/orders:
-    get:
-      summary: Pedidos para el panel de despachos (con prendas y tallas)
-      security:
-        - BearerAuth: []
-      parameters:
-        - in: query
-          name: status
-          schema: { type: string, enum: [APPROVED, SHIPPED], default: APPROVED }
-          description: APPROVED = por despachar (más antiguos primero); SHIPPED = enviados
-      responses:
-        '200':
-          description: Lista de pedidos con items (producto, talla, cantidad) y dirección de envío
-
-  /admin/orders/{id}/tracking:
-    patch:
-      summary: Actualizar guía de envío y disparar email (Brevo)
-      security:
-        - BearerAuth: []
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                trackingNumber: { type: string }
-      responses:
-        '200':
-          description: Orden actualizada y correo enviado
+              schema: { type: object, properties: { url: { type: string } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '503': { description: GCS no configurado }
 
 components:
   securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  parameters:
+    Slug: { in: path, name: slug, required: true, schema: { type: string } }
+    Id: { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+
+  requestBodies:
+    Reorder:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [ids]
+            properties:
+              ids: { type: array, items: { type: string }, description: 'Ids en el orden deseado' }
+
+  responses:
+    NotFound:
+      description: No encontrado
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    BadRequest:
+      description: Datos inválidos
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
 
   schemas:
-    Product:
+    Error:
+      type: object
+      properties: { error: { type: string } }
+
+    Color:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string, example: Verde rana }
+        hex: { type: string, example: '#3FA34D' }
+
+    PublicBanner:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        subtitle: { type: string, nullable: true }
+        imageDesktop: { type: string }
+        imageMobile: { type: string, nullable: true }
+        ctaLabel: { type: string, nullable: true }
+        ctaUrl: { type: string, nullable: true }
+
+    SectionOverview:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string, example: Temporada }
+        slug: { type: string, example: temporada }
+        tag: { type: string, nullable: true, example: NAVIDAD }
+        description: { type: string }
+        coverImage: { type: string, nullable: true }
+        colors: { type: array, items: { $ref: '#/components/schemas/Color' } }
+        productCount: { type: integer }
+
+    ProductCard:
       type: object
       properties:
         id: { type: string }
         name: { type: string }
         slug: { type: string }
-        basePrice: { type: number }
-        costPrice: { type: number, description: "Solo visible para admin" }
-        stockAvailable: { type: integer }
-        images:
-          type: array
-          items: { type: string, format: uri }
+        image: { type: string, nullable: true }
+        images: { type: array, items: { type: string } }
+        price: { type: integer, nullable: true, description: 'COP; null = a cotizar' }
+        featured: { type: boolean }
+        colors: { type: array, items: { $ref: '#/components/schemas/Color' } }
 
-    FinancialStats:
+    SectionDetail:
+      allOf:
+        - $ref: '#/components/schemas/SectionOverview'
+        - type: object
+          properties:
+            products: { type: array, items: { $ref: '#/components/schemas/ProductCard' } }
+
+    ProductDetail:
+      allOf:
+        - $ref: '#/components/schemas/ProductCard'
+        - type: object
+          properties:
+            description: { type: string }
+            section:
+              type: object
+              nullable: true
+              properties: { name: { type: string }, slug: { type: string }, tag: { type: string, nullable: true } }
+
+    Settings:
       type: object
       properties:
-        grossRevenue: { type: number }
-        totalCosts: { type: number }
-        netMargin: { type: number }
-        inventoryRotation: { type: number }
+        whatsappNumber: { type: string, example: '573054050812' }
+        whatsappMessage: { type: string }
+        instagramUrl: { type: string }
+        tiktokUrl: { type: string }
+        facebookUrl: { type: string }
+        contactEmail: { type: string }
+
+    BannerInput:
+      type: object
+      required: [title, imageDesktop]
+      properties:
+        title: { type: string, maxLength: 120 }
+        subtitle: { type: string, nullable: true, maxLength: 240 }
+        imageDesktop: { type: string }
+        imageMobile: { type: string, nullable: true }
+        ctaLabel: { type: string, nullable: true, maxLength: 40 }
+        ctaUrl: { type: string, nullable: true, description: 'Empieza por / o https://' }
+        active: { type: boolean }
+        startsAt: { type: string, format: date-time, nullable: true }
+        endsAt: { type: string, format: date-time, nullable: true }
+
+    ColorInput:
+      type: object
+      required: [name, hex]
+      properties:
+        name: { type: string, maxLength: 60 }
+        hex: { type: string, pattern: '^#[0-9a-fA-F]{6}$' }
+        available: { type: boolean }
+
+    SectionInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, maxLength: 60 }
+        slug: { type: string, description: 'Si se omite al crear, se genera del nombre' }
+        tag: { type: string, nullable: true, maxLength: 30 }
+        description: { type: string, maxLength: 600 }
+        coverImage: { type: string, nullable: true }
+        active: { type: boolean }
+        colorIds: { type: array, items: { type: string }, description: 'Paleta, en orden' }
+
+    ProductInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, maxLength: 120 }
+        slug: { type: string }
+        description: { type: string, maxLength: 4000 }
+        sectionId: { type: string, nullable: true }
+        images: { type: array, items: { type: string } }
+        price: { type: integer, nullable: true, minimum: 0 }
+        featured: { type: boolean }
+        active: { type: boolean }
+        colorIds: { type: array, items: { type: string } }

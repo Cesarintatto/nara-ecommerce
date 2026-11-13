@@ -1,4 +1,5 @@
 // /backend/prisma/schema.prisma
+// Naracol Estudio: catálogo de diseño e impresión 3D con pedidos por WhatsApp.
 
 generator client {
   provider = "prisma-client-js"
@@ -9,119 +10,107 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum OrderStatus {
-  PENDING
-  APPROVED
-  SHIPPED
-  CANCELLED
-  REFUNDED
+// Usuarios del panel administrativo
+model User {
+  id             String    @id @default(uuid())
+  email          String    @unique
+  password       String
+  role           String    @default("ADMIN")
+  failedAttempts Int       @default(0)
+  lockedUntil    DateTime?
+  createdAt      DateTime  @default(now())
 }
 
-model User {
-  id            String   @id @default(uuid())
-  email         String   @unique
-  password      String
-  role          String   @default("ADMIN") // Para panel administrativo
-  failedAttempts Int     @default(0)
-  lockedUntil   DateTime?
-  createdAt     DateTime @default(now())
+// Diapositivas del carrusel del home
+model Banner {
+  id           String    @id @default(uuid())
+  title        String
+  subtitle     String?
+  imageDesktop String // URL pública en GCS (WebP)
+  imageMobile  String? // Opcional: si falta se usa imageDesktop
+  ctaLabel     String? // Texto del botón
+  ctaUrl       String? // Ruta interna (/seccion/clickers) o URL externa
+  sortOrder    Int       @default(0)
+  active       Boolean   @default(true)
+  startsAt     DateTime? // Si existe, no se muestra antes de esta fecha
+  endsAt       DateTime? // Si existe, no se muestra después de esta fecha
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([active, sortOrder])
+}
+
+// Biblioteca de colores de filamento. Son datos de producto, NO colores de marca.
+model Color {
+  id        String         @id @default(uuid())
+  name      String         @unique // "Verde rana", "Rojo navidad"…
+  hex       String // "#3FA34D"
+  available Boolean        @default(true) // false = agotado: desaparece de todas las paletas
+  sortOrder Int            @default(0)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  sections  SectionColor[]
+  products  ProductColor[]
+}
+
+// Secciones del sitio: Clickers, Temporada, Hogar…
+model Section {
+  id          String         @id @default(uuid())
+  name        String
+  slug        String         @unique
+  tag         String? // Etiqueta corta, p. ej. "NAVIDAD" en Temporada
+  description String         @default("")
+  coverImage  String? // Imagen del overview (GCS)
+  sortOrder   Int            @default(0)
+  active      Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  products    Product[]
+  colors      SectionColor[] // Paleta de la sección (editable en el admin)
+}
+
+model SectionColor {
+  sectionId String
+  colorId   String
+  sortOrder Int     @default(0)
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  color     Color   @relation(fields: [colorId], references: [id], onDelete: Cascade)
+
+  @@id([sectionId, colorId])
 }
 
 model Product {
-  id              String             @id @default(uuid())
-  name            String
-  description     String
-  slug            String             @unique
-  basePrice       Decimal            @db.Decimal(10, 2) // Precio de venta
-  costPrice       Decimal            @db.Decimal(10, 2) // Precio de lote/maquila para margen
-  category        Category           @relation(fields: [categoryId], references: [id])
-  categoryId      String
-  images          String[]           // URLs públicas en Google Cloud Storage (WebP)
-  stockPhysical   Int                // Total de todas las tallas (se mantiene igual a la suma de variants)
-  stockAvailable  Int                // Total disponible de todas las tallas (suma de variants)
-  variants        ProductVariant[]
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-  orderItems      OrderItem[]
-  reservations    StockReservation[]
+  id          String         @id @default(uuid())
+  name        String
+  slug        String         @unique
+  description String         @default("")
+  sectionId   String?
+  section     Section?       @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  images      String[] // URLs públicas en GCS (WebP); la primera es la portada
+  price       Int? // Pesos colombianos. null = "a cotizar"
+  featured    Boolean        @default(false)
+  active      Boolean        @default(true)
+  sortOrder   Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  colors      ProductColor[] // Colores en los que se puede pedir
+
+  @@index([sectionId, active, sortOrder])
 }
 
-// Talla de un producto con su propio inventario. "Única" = talla única.
-model ProductVariant {
-  id             String             @id @default(uuid())
-  productId      String
-  product        Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
-  size           String             // "S", "M", "10", "Única"…
-  sortOrder      Int                @default(0)
-  stockPhysical  Int                @default(0) // Inventario real en bodega
-  stockAvailable Int                @default(0) // Inventario menos reservas activas
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-  reservations   StockReservation[]
-  orderItems     OrderItem[]
-
-  @@unique([productId, size])
-}
-
-model Category {
-  id       String    @id @default(uuid())
-  name     String    @unique
-  products Product[]
-}
-
-model Checkout {
-  id              String             @id @default(uuid())
-  externalId      String             @unique // Referencia de pago enviada a Wompi
-  amountInCents   Int                // Monto firmado en Wompi (COP x 100)
-  customerEmail   String
-  customerName    String
-  shippingAddress Json
-  // Autorización de tratamiento de datos (Ley 1581 de 2012): cuándo y qué versión aceptó
-  privacyAcceptedAt DateTime?
-  policyVersion     String?
-  expiresAt       DateTime           // TTL de 15 minutos
-  createdAt       DateTime           @default(now())
-  reservations    StockReservation[]
-
-  @@index([expiresAt])
-}
-
-model StockReservation {
-  id         String   @id @default(uuid())
-  productId  String
-  product    Product  @relation(fields: [productId], references: [id])
-  variantId  String?
-  variant    ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Restrict)
-  quantity   Int
-  checkoutId String
-  checkout   Checkout @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
-}
-
-model Order {
-  id               String      @id @default(uuid())
-  customerEmail    String
-  customerName     String
-  status           OrderStatus @default(PENDING)
-  totalAmount      Decimal     @db.Decimal(10, 2)
-  paymentId        String?     @unique // ID de la transacción en Wompi
-  trackingNumber   String?     // Guía de envío física
-  shippingAddress  Json        // Datos de dirección
-  privacyAcceptedAt DateTime?  // Autorización de tratamiento de datos (Ley 1581)
-  policyVersion     String?    // Versión de términos/política aceptada
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
-  items            OrderItem[]
-}
-
-model OrderItem {
-  id        String  @id @default(uuid())
-  orderId   String
-  order     Order   @relation(fields: [orderId], references: [id])
+model ProductColor {
   productId String
-  product   Product @relation(fields: [productId], references: [id])
-  variantId String?
-  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
-  size      String?  // Talla comprada (se guarda el texto por si la talla se elimina después)
-  quantity  Int
-  priceAtPurchase Decimal @db.Decimal(10, 2)
+  colorId   String
+  sortOrder Int     @default(0)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  color     Color   @relation(fields: [colorId], references: [id], onDelete: Cascade)
+
+  @@id([productId, colorId])
+}
+
+// Ajustes editables: WhatsApp, mensaje por defecto, redes
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

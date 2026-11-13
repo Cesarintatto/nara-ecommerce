@@ -1,48 +1,65 @@
 import { Router } from 'express';
+import { asyncHandler as h } from '../lib/http';
 import { healthCheck } from '../controllers/health.controller';
-import { listProducts, getProductBySlug } from '../controllers/products.controller';
 import { login } from '../controllers/auth.controller';
-import { getDashboardStats, listAdminOrders, updateOrderTracking } from '../controllers/admin.controller';
-import {
-  listAdminProducts,
-  getAdminProduct,
-  createAdminProduct,
-  updateAdminProduct,
-  deleteAdminProduct,
-  listCategories,
-} from '../controllers/admin-products.controller';
+import * as pub from '../controllers/public.controller';
+import * as admin from '../controllers/admin-catalog.controller';
 import { receiveImage, uploadImage } from '../controllers/admin-uploads.controller';
-import { createCheckout, getTransactionStatus } from '../controllers/checkout.controller';
-import { handleWompiWebhook } from '../controllers/webhook.controller';
-import { releaseExpiredStock } from '../controllers/cron.controller';
 import { checkAuthLock } from '../middlewares/auth';
 import { requireAuth } from '../middlewares/jwtAuth';
-import { requireCronSecret } from '../middlewares/cronAuth';
 
 const router = Router();
 
 router.get('/health', healthCheck);
 
-router.get('/products', listProducts);
-router.get('/products/:slug', getProductBySlug);
+// ---------- Sitio público ----------
+router.get('/banners', h(pub.getBanners));
+router.get('/sections', h(pub.getSections));
+router.get('/sections/:slug', h(pub.getSection));
+router.get('/products', h(pub.getProducts));
+router.get('/products/:slug', h(pub.getProduct));
+router.get('/settings', h(pub.getPublicSettings));
 
-router.post('/admin/auth/login', checkAuthLock, login);
-router.get('/admin/dashboard/stats', requireAuth, getDashboardStats);
-router.get('/admin/orders', requireAuth, listAdminOrders);
-router.patch('/admin/orders/:id/tracking', requireAuth, updateOrderTracking);
+// ---------- Admin ----------
+// La ruta de login va antes del sub-router /admin, que exige token
+router.post('/admin/auth/login', checkAuthLock, h(login));
 
-router.get('/admin/categories', requireAuth, listCategories);
-router.get('/admin/products', requireAuth, listAdminProducts);
-router.get('/admin/products/:id', requireAuth, getAdminProduct);
-router.post('/admin/products', requireAuth, createAdminProduct);
-router.patch('/admin/products/:id', requireAuth, updateAdminProduct);
-router.delete('/admin/products/:id', requireAuth, deleteAdminProduct);
-router.post('/admin/uploads/images', requireAuth, receiveImage, uploadImage);
+const a = Router();
+a.use(requireAuth);
 
-router.post('/checkout', createCheckout);
-router.get('/checkout/transactions/:id', getTransactionStatus);
-router.post('/webhooks/wompi', handleWompiWebhook);
+a.get('/summary', h(admin.summary));
 
-router.post('/internal/cron/release-expired-stock', requireCronSecret, releaseExpiredStock);
+a.get('/banners', h(admin.listBanners));
+a.post('/banners', h(admin.createBanner));
+a.patch('/banners/order', h(admin.reorder('banner')));
+a.patch('/banners/:id', h(admin.updateBanner));
+a.delete('/banners/:id', h(admin.deleteBanner));
+
+a.get('/colors', h(admin.listColors));
+a.post('/colors', h(admin.createColor));
+a.patch('/colors/order', h(admin.reorder('color')));
+a.patch('/colors/:id', h(admin.updateColor));
+a.delete('/colors/:id', h(admin.deleteColor));
+
+a.get('/sections', h(admin.listSections));
+a.post('/sections', h(admin.createSection));
+a.patch('/sections/order', h(admin.reorder('section')));
+a.get('/sections/:id', h(admin.getSection));
+a.patch('/sections/:id', h(admin.updateSection));
+a.delete('/sections/:id', h(admin.deleteSection));
+
+a.get('/products', h(admin.listProducts));
+a.post('/products', h(admin.createProduct));
+a.patch('/products/order', h(admin.reorder('product')));
+a.get('/products/:id', h(admin.getProduct));
+a.patch('/products/:id', h(admin.updateProduct));
+a.delete('/products/:id', h(admin.deleteProduct));
+
+a.get('/settings', h(admin.readSettings));
+a.patch('/settings', h(admin.writeSettings));
+
+a.post('/uploads/images', receiveImage, h(uploadImage));
+
+router.use('/admin', a);
 
 export default router;

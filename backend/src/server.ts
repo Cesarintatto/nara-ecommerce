@@ -5,8 +5,8 @@ import { prisma } from './lib/prisma';
 const PORT = Number(process.env.PORT) || 3000;
 
 const server = app.listen(PORT, () => {
-  console.log(`[NARA API] Escuchando en http://localhost:${PORT}`);
-  console.log(`[NARA API] Health: http://localhost:${PORT}/api/v1/health`);
+  console.log(`[Naracol API] Escuchando en http://localhost:${PORT}`);
+  console.log(`[Naracol API] Health: http://localhost:${PORT}/api/v1/health`);
 });
 
 const shutdown = async () => {

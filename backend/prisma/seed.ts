@@ -1,109 +1,121 @@
+// Datos iniciales de Naracol Estudio.
+// - Siempre: usuario admin, colores de filamento base, secciones y ajustes.
+// - Con SEED_SAMPLE_PRODUCTS=true: productos de ejemplo (solo para desarrollo).
+// Es idempotente: se puede correr varias veces sin duplicar.
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
-async function main() {
-  const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@nara.com';
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin123';
-  const passwordHash = await bcrypt.hash(adminPassword, 10);
+const COLORS: [name: string, hex: string][] = [
+  ['Verde rana', '#3FA34D'],
+  ['Amarillo', '#F5C518'],
+  ['Rosa chicle', '#F49AC1'],
+  ['Azul cielo', '#6EC1E4'],
+  ['Morado', '#7E57C2'],
+  ['Rojo navidad', '#C62828'],
+  ['Verde pino', '#1B5E20'],
+  ['Dorado', '#C9A227'],
+  ['Blanco', '#FFFFFF'],
+  ['Negro', '#1A1A1A'],
+  ['Gris', '#9E9E9E'],
+  ['Madera', '#A47551'],
+];
 
+const SECTIONS = [
+  {
+    name: 'Clickers',
+    slug: 'clickers',
+    tag: 'COLECCIONABLES',
+    description: 'Llaveros que hacen clic. Se regalan, se coleccionan y no se sueltan.',
+    colors: ['Verde rana', 'Amarillo', 'Rosa chicle', 'Azul cielo', 'Morado'],
+  },
+  {
+    name: 'Temporada',
+    slug: 'temporada',
+    tag: 'NAVIDAD',
+    description: 'Adornos, detalles y regalos impresos para esta Navidad.',
+    colors: ['Rojo navidad', 'Verde pino', 'Dorado', 'Blanco'],
+  },
+  {
+    name: 'Hogar',
+    slug: 'hogar',
+    tag: 'PARA USAR',
+    description: 'Piezas útiles para la casa: organizadores, soportes y comederos para mascotas.',
+    colors: ['Blanco', 'Negro', 'Gris', 'Madera'],
+  },
+];
+
+const SAMPLE_PRODUCTS = [
+  { name: 'Clicker Froggy', section: 'clickers', price: 18000, featured: true, colors: ['Verde rana', 'Rosa chicle', 'Morado'] },
+  { name: 'Clicker Pixel', section: 'clickers', price: 15000, featured: false, colors: ['Amarillo', 'Azul cielo'] },
+  { name: 'Estrella para el árbol', section: 'temporada', price: 25000, featured: true, colors: ['Dorado', 'Blanco'] },
+  { name: 'Bolas navideñas x6', section: 'temporada', price: 32000, featured: false, colors: ['Rojo navidad', 'Verde pino', 'Dorado'] },
+  { name: 'Soporte para comedero', section: 'hogar', price: null, featured: false, colors: ['Blanco', 'Negro', 'Gris'] },
+];
+
+const slugify = (v: string) =>
+  v.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+async function main() {
+  // Admin
+  const adminEmail = (process.env.SEED_ADMIN_EMAIL || 'admin@naracol.com').toLowerCase();
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  if (!adminPassword && process.env.NODE_ENV === 'production') {
+    throw new Error('Define SEED_ADMIN_PASSWORD para crear el admin en producción');
+  }
+  const passwordHash = await bcrypt.hash(adminPassword || 'naracol123', 10);
   await prisma.user.upsert({
     where: { email: adminEmail },
     update: { password: passwordHash, role: 'ADMIN', failedAttempts: 0, lockedUntil: null },
-    create: {
-      email: adminEmail,
-      password: passwordHash,
-      role: 'ADMIN',
-    },
+    create: { email: adminEmail, password: passwordHash, role: 'ADMIN' },
   });
 
-  const categories = ['Blusas', 'Pantalones', 'Jeans', 'Busos', 'Bodys', 'Vestidos'];
-  const categoryMap: Record<string, string> = {};
-
-  for (const name of categories) {
-    const cat = await prisma.category.upsert({
-      where: { name },
-      update: {},
-      create: { name },
-    });
-    categoryMap[name] = cat.id;
+  // Colores (no pisa cambios hechos desde el admin)
+  const colorId: Record<string, string> = {};
+  for (const [index, [name, hex]] of COLORS.entries()) {
+    const color = await prisma.color.upsert({ where: { name }, update: {}, create: { name, hex, sortOrder: index } });
+    colorId[name] = color.id;
   }
 
-  const products = [
-    {
-      name: 'Jean Aura Mid-Size',
-      slug: 'jean-aura',
-      description: 'Jean de tiro medio con stretch cómodo.',
-      basePrice: 189000,
-      costPrice: 95000,
-      categoryId: categoryMap.Jeans,
-      images: ['https://images.unsplash.com/photo-1541099649105-f69ad21f3246?auto=format&fit=crop&q=80'],
-      stockPhysical: 20,
-      stockAvailable: 20,
-    },
-    {
-      name: 'Blusa Lino Arena',
-      slug: 'blusa-lino',
-      description: 'Blusa en lino natural, corte fluido.',
-      basePrice: 125000,
-      costPrice: 62000,
-      categoryId: categoryMap.Blusas,
-      images: ['https://images.unsplash.com/photo-1564584217132-2271feaeb3c5?auto=format&fit=crop&q=80'],
-      stockPhysical: 15,
-      stockAvailable: 15,
-    },
-    {
-      name: 'Vestido Fluido Oliva',
-      slug: 'vestido-oliva',
-      description: 'Vestido midi en tono oliva.',
-      basePrice: 210000,
-      costPrice: 105000,
-      categoryId: categoryMap.Vestidos,
-      images: ['https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?auto=format&fit=crop&q=80'],
-      stockPhysical: 10,
-      stockAvailable: 10,
-    },
-    {
-      name: 'Camisa Skin Seda',
-      slug: 'camisa-skin',
-      description: 'Camisa ligera con caída suave.',
-      basePrice: 145000,
-      costPrice: 72000,
-      categoryId: categoryMap.Blusas,
-      images: ['https://images.unsplash.com/photo-1598033129183-c4f50c7176c8?auto=format&fit=crop&q=80'],
-      stockPhysical: 12,
-      stockAvailable: 12,
-    },
-  ];
-
-  // Tallas de ejemplo por producto (la suma debe coincidir con su stock)
-  const sizesBySlug: Record<string, Array<[string, number]>> = {
-    'jean-aura': [['8', 4], ['10', 6], ['12', 6], ['14', 4]],
-    'blusa-lino': [['S', 5], ['M', 5], ['L', 5]],
-    'vestido-oliva': [['Única', 10]],
-    'camisa-skin': [['S', 4], ['M', 4], ['L', 4]],
-  };
-
-  for (const product of products) {
-    const saved = await prisma.product.upsert({
-      where: { slug: product.slug },
-      update: product,
-      create: product,
+  // Secciones con su paleta (solo se crean si no existen)
+  for (const [index, s] of SECTIONS.entries()) {
+    const exists = await prisma.section.findUnique({ where: { slug: s.slug } });
+    if (exists) continue;
+    await prisma.section.create({
+      data: {
+        name: s.name,
+        slug: s.slug,
+        tag: s.tag,
+        description: s.description,
+        sortOrder: index,
+        colors: { create: s.colors.map((name, i) => ({ colorId: colorId[name], sortOrder: i })) },
+      },
     });
+  }
 
-    const sizes = sizesBySlug[product.slug] ?? [['Única', product.stockPhysical]];
-    for (const [index, [size, stock]] of sizes.entries()) {
-      await prisma.productVariant.upsert({
-        where: { productId_size: { productId: saved.id, size } },
-        update: {},
-        create: { productId: saved.id, size, sortOrder: index, stockPhysical: stock, stockAvailable: stock },
+  if (process.env.SEED_SAMPLE_PRODUCTS === 'true') {
+    for (const [index, p] of SAMPLE_PRODUCTS.entries()) {
+      const slug = slugify(p.name);
+      if (await prisma.product.findUnique({ where: { slug } })) continue;
+      const section = await prisma.section.findUnique({ where: { slug: p.section } });
+      await prisma.product.create({
+        data: {
+          name: p.name,
+          slug,
+          description: `${p.name}, diseñado e impreso en 3D por Naracol Estudio. Elige tu color y pídelo por WhatsApp.`,
+          sectionId: section?.id,
+          price: p.price,
+          featured: p.featured,
+          images: [],
+          sortOrder: index,
+          colors: { create: p.colors.map((name, i) => ({ colorId: colorId[name], sortOrder: i })) },
+        },
       });
     }
   }
 
-  console.log('Seed completado.');
-  console.log(`Admin: ${adminEmail} / ${adminPassword}`);
+  console.log(`[seed] Listo. Admin: ${adminEmail}`);
 }
 
 main()
