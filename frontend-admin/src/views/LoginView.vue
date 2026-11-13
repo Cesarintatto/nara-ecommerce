@@ -1,13 +1,16 @@
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/authStore'
+import { errorMessage } from '../api/client'
+import logoPrincipal from '../assets/logos/naracol-logo-principal.svg'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const email = ref('')
 const password = ref('')
-const error = ref('')
+const error = ref(route.query.expirada ? 'Tu sesión expiró. Vuelve a entrar.' : '')
 const isSubmitting = ref(false)
 
 const onSubmit = async () => {
@@ -16,13 +19,12 @@ const onSubmit = async () => {
     error.value = 'Ingresa correo y contraseña.'
     return
   }
-
   isSubmitting.value = true
   try {
     await auth.login(email.value.trim().toLowerCase(), password.value)
-    router.push('/dashboard')
+    router.push('/inicio')
   } catch (err) {
-    error.value = err.response?.data?.error || 'No se pudo iniciar sesión. ¿Está el backend en marcha?'
+    error.value = errorMessage(err, 'No se pudo iniciar sesión.')
   } finally {
     isSubmitting.value = false
   }
@@ -30,56 +32,24 @@ const onSubmit = async () => {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-nara-olive/5 px-4 font-sans">
-    <div class="w-full max-w-md bg-nara-light rounded-nara border border-nara-olive/20 shadow-lg p-8">
-      <header class="text-center mb-8">
-        <h1 class="text-4xl font-serif text-nara-dark tracking-tight">NARA</h1>
-        <p class="mt-2 text-sm text-nara-sand uppercase tracking-widest">Panel administrativo</p>
-      </header>
-
-      <form class="space-y-5" @submit.prevent="onSubmit">
+  <div class="sobre-verde flex min-h-screen items-center justify-center bg-verde px-4 py-10">
+    <div class="w-full max-w-md">
+      <img :src="logoPrincipal" alt="Naracol Estudio" class="mx-auto h-auto w-full max-w-[320px]" />
+      <form class="tarjeta mt-8 space-y-5 border-crema p-7 shadow-capa-lg" @submit.prevent="onSubmit">
+        <p class="etiqueta">Panel administrativo</p>
         <div>
-          <label for="email" class="block text-xs uppercase tracking-wider text-nara-dark/70 mb-2">
-            Correo
-          </label>
-          <input
-            id="email"
-            v-model="email"
-            type="email"
-            autocomplete="email"
-            class="w-full px-4 py-3 rounded-nara border border-nara-olive/30 focus:outline-none focus:ring-2 focus:ring-nara-olive/50 text-nara-dark"
-            placeholder="admin@nara.com"
-          />
+          <label for="email" class="rotulo">Correo</label>
+          <input id="email" v-model="email" type="email" autocomplete="email" class="campo" />
         </div>
-
         <div>
-          <label for="password" class="block text-xs uppercase tracking-wider text-nara-dark/70 mb-2">
-            Contraseña
-          </label>
-          <input
-            id="password"
-            v-model="password"
-            type="password"
-            autocomplete="current-password"
-            class="w-full px-4 py-3 rounded-nara border border-nara-olive/30 focus:outline-none focus:ring-2 focus:ring-nara-olive/50 text-nara-dark"
-            placeholder="••••••••"
-          />
+          <label for="password" class="rotulo">Contraseña</label>
+          <input id="password" v-model="password" type="password" autocomplete="current-password" class="campo" />
         </div>
-
-        <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-
-        <button
-          type="submit"
-          :disabled="isSubmitting"
-          class="w-full py-3 rounded-nara bg-nara-sand text-white font-medium hover:bg-nara-olive transition-colors disabled:opacity-60"
-        >
-          {{ isSubmitting ? 'Entrando…' : 'Iniciar sesión' }}
+        <p v-if="error" class="border-l-4 border-rosa pl-3 text-sm font-bold" role="alert">{{ error }}</p>
+        <button type="submit" :disabled="isSubmitting" class="btn-primario w-full !py-3">
+          {{ isSubmitting ? 'Entrando…' : 'Entrar' }}
         </button>
       </form>
-
-      <p class="mt-6 text-center text-xs text-nara-dark/40">
-        Tras el seed: admin@nara.com / admin123
-      </p>
     </div>
   </div>
 </template>

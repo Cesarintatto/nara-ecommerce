@@ -1,3 +1,71 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-crema font-sans text-verde antialiased;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-bold;
+    line-height: 1.15;
+  }
+  :focus-visible {
+    outline: 2px solid #1f3a2e;
+    outline-offset: 2px;
+  }
+  .sobre-verde :focus-visible {
+    outline-color: #f2efe8;
+  }
+}
+
+@layer components {
+  .etiqueta {
+    @apply text-[11px] font-bold uppercase tracking-etiqueta;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 border-2 px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] shadow-capa-sm transition-[transform,box-shadow,background-color] duration-150 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn:not(:disabled):hover {
+    transform: translate(1px, 1px);
+    box-shadow: 1px 1px 0 0 #e8899f;
+  }
+  .btn-primario {
+    @apply btn border-verde bg-verde text-crema hover:bg-verde-profundo;
+  }
+  .btn-secundario {
+    @apply btn border-verde bg-crema text-verde;
+  }
+  .btn-peligro {
+    @apply btn border-verde bg-crema text-verde shadow-none hover:bg-verde hover:text-crema;
+  }
+  .btn-icono {
+    @apply inline-flex h-8 w-8 items-center justify-center border-2 border-verde/30 hover:border-verde disabled:opacity-30 disabled:hover:border-verde/30;
+  }
+
+  /* Formularios */
+  .rotulo {
+    @apply etiqueta mb-2 block;
+  }
+  .campo {
+    @apply w-full border-2 border-verde/40 bg-white px-3 py-2 text-verde placeholder:text-verde/40 focus:border-verde focus:outline-none;
+  }
+  .ayuda {
+    @apply mt-1 text-xs text-verde/70;
+  }
+
+  .tarjeta {
+    @apply border-2 border-verde bg-white;
+  }
+
+  .cuadricula {
+    background-image: linear-gradient(rgba(31, 58, 46, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(31, 58, 46, 0.08) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+}
