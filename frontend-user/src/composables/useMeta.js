@@ -1,8 +1,8 @@
 import { watchEffect } from 'vue'
 
-export const SITE_NAME = 'NARA'
+export const SITE_NAME = 'Naracol Estudio'
 export const DEFAULT_DESCRIPTION =
-  'NARA — Tu cuerpo, tu ritmo, tu estilo. Moda diseñada para acompañar tu día a día.'
+  'Naracol Estudio: diseñamos e imprimimos en 3D llaveros clicker, figuras, adornos de temporada y piezas para el hogar. Elige tu color y pide por WhatsApp.'
 
 function upsertMeta(attr, key, content) {
   let el = document.head.querySelector(`meta[${attr}="${key}"]`)
@@ -26,13 +26,12 @@ function upsertLink(rel, href) {
 
 /**
  * Sincroniza title/description/OG/canonical con el DOM en cada cambio reactivo.
- * getMeta debe leer refs reactivas (product.value, etc.) para que watchEffect
- * vuelva a ejecutarse cuando cambien.
+ * getMeta debe leer refs reactivas para que watchEffect vuelva a ejecutarse.
  */
 export function useMeta(getMeta) {
   watchEffect(() => {
     const { title, description = DEFAULT_DESCRIPTION, image, path = '' } = getMeta()
-    const fullTitle = title ? `${title} | ${SITE_NAME}` : SITE_NAME
+    const fullTitle = title ? `${title} | ${SITE_NAME}` : `${SITE_NAME} · Diseño e impresión 3D`
 
     document.title = fullTitle
     upsertMeta('name', 'description', description)

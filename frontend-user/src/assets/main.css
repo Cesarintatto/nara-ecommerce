@@ -1,3 +1,105 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-crema font-sans text-verde antialiased;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-bold;
+    line-height: 1.1;
+  }
+  /* Foco visible: verde sobre crema; dentro de .sobre-verde se invierte */
+  :focus-visible {
+    outline: 2px solid #1f3a2e;
+    outline-offset: 3px;
+  }
+  .sobre-verde :focus-visible {
+    outline-color: #f2efe8;
+  }
+  ::selection {
+    @apply bg-rosa text-verde;
+  }
+}
+
+@layer components {
+  /* Contenedor del sitio */
+  .contenedor {
+    @apply mx-auto w-full max-w-sitio px-5 sm:px-8;
+  }
+
+  /* ETIQUETA / DESCRIPTOR: Bold, mayúsculas, tracking +0,3 em */
+  .etiqueta {
+    @apply text-xs font-bold uppercase tracking-etiqueta;
+  }
+
+  /* Botones: siempre con la capa rosada */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 border-2 px-5 py-3 text-sm font-bold uppercase tracking-[0.12em] shadow-capa transition-[transform,box-shadow,background-color] duration-150;
+  }
+  .btn:hover {
+    transform: translate(2px, 2px);
+    @apply shadow-capa-sm;
+  }
+  .btn:active {
+    transform: translate(4px, 4px);
+    box-shadow: none;
+  }
+  .btn-primario {
+    @apply btn border-verde bg-verde text-crema hover:bg-verde-profundo hover:border-verde-profundo;
+  }
+  .btn-secundario {
+    @apply btn border-verde bg-crema text-verde;
+  }
+  /* Sobre fondo verde: botón crema con texto verde */
+  .btn-claro {
+    @apply btn border-crema bg-crema text-verde;
+  }
+
+  /* Marco de foto con la capa */
+  .marco {
+    @apply border-2 border-verde shadow-capa-lg;
+  }
+  .sobre-verde .marco {
+    @apply border-crema;
+  }
+
+  /* Cuadrícula de fondo: líneas al ~10 % del verde (o del crema sobre verde) */
+  .cuadricula {
+    background-image: linear-gradient(rgba(31, 58, 46, 0.1) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(31, 58, 46, 0.1) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  .cuadricula-clara {
+    background-image: linear-gradient(rgba(242, 239, 232, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(242, 239, 232, 0.08) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* Enlace de texto subrayado */
+  .enlace {
+    @apply underline decoration-2 underline-offset-4 hover:decoration-rosa;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .btn:hover,
+  .btn:active {
+    transform: none;
+  }
+}

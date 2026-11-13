@@ -1,53 +1,55 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import NaraLogoDefs from '../components/home/NaraLogoDefs.vue'
-import Hero from '../components/home/Hero.vue'
-import Purpose from '../components/home/Purpose.vue'
-import FeaturedProducts from '../components/home/FeaturedProducts.vue'
-import FitFinder from '../components/home/FitFinder.vue'
-import Closing from '../components/home/Closing.vue'
+import { ref, onMounted } from 'vue'
 import api from '../api/client'
+import HeroCarousel from '../components/home/HeroCarousel.vue'
+import SectionShowcase from '../components/home/SectionShowcase.vue'
+import HowToOrder from '../components/home/HowToOrder.vue'
+import { useSiteStore } from '../store/siteStore'
 import { useMeta } from '../composables/useMeta'
 
-useMeta(() => ({ path: '/' }))
+const site = useSiteStore()
+const banners = ref([])
+const loadingBanners = ref(true)
 
-const products = ref([])
-const loading = ref(true)
+useMeta(() => ({ path: '/', image: banners.value[0]?.imageDesktop }))
 
 onMounted(async () => {
+  site.load()
   try {
-    const { data } = await api.get('/products')
-    products.value = Array.isArray(data) ? data : []
+    banners.value = (await api.get('/banners')).data
   } catch {
-    products.value = []
+    banners.value = [] // Sin banners se muestra la portada de marca
   } finally {
-    loading.value = false
+    loadingBanners.value = false
   }
 })
-
-// Las 3 prendas más recientes con stock (si no alcanzan, se completan con agotadas)
-const featured = computed(() => {
-  const inStock = products.value.filter((p) => p.stockAvailable > 0)
-  const rest = products.value.filter((p) => !(p.stockAvailable > 0))
-  return [...inStock, ...rest].slice(0, 3)
-})
-
-// Fotos para el mosaico del hero: primeras imágenes de prendas distintas
-const heroImages = computed(() =>
-  products.value
-    .map((p) => p.images?.[0])
-    .filter(Boolean)
-    .slice(0, 2),
-)
 </script>
 
 <template>
   <div>
-    <NaraLogoDefs />
-    <Hero :images="heroImages" />
-    <Purpose />
-    <FeaturedProducts :products="featured" :loading="loading" />
-    <FitFinder />
-    <Closing />
+    <HeroCarousel :banners="banners" :loading="loadingBanners" />
+
+    <section id="secciones" aria-label="Secciones">
+      <template v-if="!site.sectionsLoaded">
+        <div v-for="n in 2" :key="n" class="cuadricula border-b-2 border-verde">
+          <div class="contenedor grid gap-10 py-16 md:grid-cols-12">
+            <div class="aspect-[4/3] animate-pulse bg-verde/10 md:col-span-7"></div>
+            <div class="space-y-4 md:col-span-5">
+              <div class="h-4 w-24 animate-pulse bg-verde/10"></div>
+              <div class="h-10 w-48 animate-pulse bg-verde/10"></div>
+              <div class="h-16 w-full animate-pulse bg-verde/10"></div>
+            </div>
+          </div>
+        </div>
+      </template>
+      <div v-else-if="site.sectionsError" class="contenedor py-16">
+        <p>No pudimos cargar las secciones. Recarga la página o escríbenos por WhatsApp.</p>
+      </div>
+      <template v-else>
+        <SectionShowcase v-for="(s, i) in site.sections" :key="s.id" :section="s" :index="i" />
+      </template>
+    </section>
+
+    <HowToOrder />
   </div>
 </template>
