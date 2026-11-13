@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
+import { publicVariantSelect } from '../services/variants.service';
 
 const productSelect = {
   id: true,
@@ -10,6 +11,7 @@ const productSelect = {
   stockAvailable: true,
   images: true,
   category: { select: { id: true, name: true } },
+  variants: publicVariantSelect,
 };
 
 export const listProducts = async (req: Request, res: Response) => {

@@ -7,7 +7,7 @@ export class LogisticsService {
    * Registra el despacho de un pedido y notifica a la clienta
    */
   static async shipOrder(orderId: string, trackingNumber: string) {
-    return await prisma.$transaction(async (tx) => {
+    const shipped = await prisma.$transaction(async (tx) => {
       // 1. Validar que la orden existe y está pagada
       const order = await tx.order.findUnique({
         where: { id: orderId }
@@ -27,15 +27,53 @@ export class LogisticsService {
         }
       });
 
-      // 3. Disparar Email de Despacho vía Brevo
-      // Template ID: 2 (Configurado para "Pedido en Camino")
-      await sendNaraEmail(order.customerEmail, 2, {
-        customer_name: order.customerName,
-        tracking_number: trackingNumber,
-        order_id: order.id.slice(-6).toUpperCase() // ID corto para referencia
-      });
-
       return updatedOrder;
+    });
+
+    // 3. Email de despacho vía Brevo (template 2), FUERA de la transacción:
+    // si Brevo falla o no está configurado, la guía ya quedó registrada.
+    try {
+      await sendNaraEmail(shipped.customerEmail, 2, {
+        customer_name: shipped.customerName,
+        tracking_number: trackingNumber,
+        order_id: shipped.id.slice(-6).toUpperCase(), // ID corto para referencia
+      });
+    } catch (error) {
+      console.error(`[Logistics] Pedido ${shipped.id} despachado, pero falló el correo de Brevo:`, error);
+    }
+
+    return shipped;
+  }
+
+  /**
+   * Pedidos para el panel de despachos, con sus prendas y tallas.
+   * status: APPROVED = por despachar (más antiguos primero), SHIPPED = enviados.
+   */
+  static async listOrders(status: 'APPROVED' | 'SHIPPED') {
+    return prisma.order.findMany({
+      where: { status },
+      orderBy: { createdAt: status === 'APPROVED' ? 'asc' : 'desc' },
+      take: 200,
+      select: {
+        id: true,
+        status: true,
+        customerName: true,
+        customerEmail: true,
+        shippingAddress: true,
+        totalAmount: true,
+        trackingNumber: true,
+        createdAt: true,
+        updatedAt: true,
+        items: {
+          select: {
+            id: true,
+            quantity: true,
+            size: true,
+            priceAtPurchase: true,
+            product: { select: { name: true, slug: true, images: true } },
+          },
+        },
+      },
     });
   }
 }

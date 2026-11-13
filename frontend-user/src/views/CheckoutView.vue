@@ -41,7 +41,11 @@ const submit = async () => {
   isSubmitting.value = true
   try {
     const { data } = await api.post('/checkout', {
-      items: cart.items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+      items: cart.items.map((item) => ({
+        productId: item.productId,
+        variantId: item.variantId,
+        quantity: item.quantity,
+      })),
       customerEmail: form.value.customerEmail,
       customerName: form.value.customerName,
       shippingAddress: {

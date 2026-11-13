@@ -39,6 +39,13 @@ const logout = () => {
             >
               Productos
             </router-link>
+            <router-link
+              to="/despachos"
+              class="text-nara-dark/50 hover:text-nara-olive transition-colors"
+              active-class="!text-nara-olive font-medium"
+            >
+              Despachos
+            </router-link>
           </nav>
         </div>
         <button

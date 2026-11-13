@@ -17,6 +17,20 @@ const activeImageIndex = ref(0)
 const quantity = ref(1)
 const justAdded = ref(false)
 
+// --- Tallas ---
+const ONE_SIZE = 'Única'
+const selectedVariantId = ref(null)
+const variants = computed(() => product.value?.variants || [])
+const isOneSize = computed(() => variants.value.length === 1 && variants.value[0].size === ONE_SIZE)
+const selectedVariant = computed(() => variants.value.find((v) => v.id === selectedVariantId.value) || null)
+const maxQuantity = computed(() => selectedVariant.value?.stockAvailable || 0)
+
+const selectVariant = (variant) => {
+  if (variant.stockAvailable === 0) return
+  selectedVariantId.value = variant.id
+  quantity.value = 1
+}
+
 const formatPrice = (value) =>
   new Intl.NumberFormat('es-CO', {
     style: 'currency',
@@ -34,6 +48,9 @@ const loadProduct = async (slug) => {
   try {
     const { data } = await api.get(`/products/${slug}`)
     product.value = data
+    // Con una sola talla (o talla única) con stock, queda elegida de una vez
+    const available = (data.variants || []).filter((v) => v.stockAvailable > 0)
+    selectedVariantId.value = (data.variants || []).length === 1 && available.length === 1 ? available[0].id : null
   } catch (err) {
     if (err.response?.status === 404) {
       error.value = 'Producto no encontrado.'
@@ -51,12 +68,12 @@ const decreaseQuantity = () => {
 }
 
 const increaseQuantity = () => {
-  quantity.value = Math.min(product.value?.stockAvailable || 1, quantity.value + 1)
+  quantity.value = Math.min(maxQuantity.value || 1, quantity.value + 1)
 }
 
 const addToCart = () => {
-  if (!product.value || product.value.stockAvailable === 0) return
-  cart.addItem(product.value, quantity.value)
+  if (!product.value || !selectedVariant.value || selectedVariant.value.stockAvailable === 0) return
+  cart.addItem(product.value, selectedVariant.value, quantity.value)
   justAdded.value = true
   setTimeout(() => {
     justAdded.value = false
@@ -136,17 +153,48 @@ useMeta(() => ({
         >
           Agotado temporalmente
         </p>
-        <p v-else class="text-sm text-nara-dark/40 mb-6">
-          {{ product.stockAvailable }} disponible{{ product.stockAvailable !== 1 ? 's' : '' }}
-        </p>
 
         <p class="text-nara-dark/70 mb-8 leading-relaxed whitespace-pre-line">
           {{ product.description }}
         </p>
 
-        <SizeAssistant class="mb-8" />
+        <!-- Selector de talla -->
+        <div v-if="variants.length" class="mb-6">
+          <p v-if="isOneSize" class="text-sm text-nara-dark/80">
+            <span class="text-xs uppercase tracking-widest text-nara-dark/50 mr-2">Talla</span>
+            Talla única
+          </p>
+          <fieldset v-else>
+            <legend class="text-xs uppercase tracking-widest text-nara-dark/50 mb-3">Elige tu talla</legend>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="variant in variants"
+                :key="variant.id"
+                type="button"
+                :disabled="variant.stockAvailable === 0"
+                :aria-pressed="selectedVariantId === variant.id"
+                :class="[
+                  'min-w-[3rem] h-11 px-4 rounded-xl border text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-nara-dark',
+                  selectedVariantId === variant.id
+                    ? 'bg-nara-dark text-white border-nara-dark'
+                    : 'bg-white text-nara-dark border-nara-dark/20 hover:border-nara-dark',
+                  variant.stockAvailable === 0 ? 'opacity-35 line-through cursor-not-allowed hover:border-nara-dark/20' : '',
+                ]"
+                @click="selectVariant(variant)"
+              >
+                {{ variant.size }}
+              </button>
+            </div>
+          </fieldset>
+          <p v-if="selectedVariant" class="mt-3 text-sm text-nara-dark/50">
+            {{ selectedVariant.stockAvailable }} disponible{{ selectedVariant.stockAvailable !== 1 ? 's' : '' }}
+            <template v-if="!isOneSize"> en talla {{ selectedVariant.size }}</template>
+          </p>
+        </div>
 
-        <div v-if="product.stockAvailable > 0" class="flex items-center gap-4 mb-4">
+        <SizeAssistant v-if="!isOneSize" class="mb-8" />
+
+        <div v-if="selectedVariant" class="flex items-center gap-4 mb-4">
           <span class="text-xs uppercase tracking-widest text-nara-dark/50">Cantidad</span>
           <div class="flex items-center border border-nara-dark/15 rounded-xl overflow-hidden">
             <button
@@ -161,7 +209,7 @@ useMeta(() => ({
             <button
               type="button"
               class="w-10 h-10 flex items-center justify-center hover:bg-nara-olive/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-              :disabled="quantity >= product.stockAvailable"
+              :disabled="quantity >= maxQuantity"
               @click="increaseQuantity"
             >
               +
@@ -171,11 +219,11 @@ useMeta(() => ({
 
         <button
           type="button"
-          :disabled="product.stockAvailable === 0"
+          :disabled="product.stockAvailable === 0 || !selectedVariant"
           class="w-full bg-nara-dark text-white py-4 rounded-xl hover:bg-nara-sand transition-colors uppercase tracking-widest font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
           @click="addToCart"
         >
-          {{ product.stockAvailable === 0 ? 'Agotado' : 'Añadir al carrito' }}
+          {{ product.stockAvailable === 0 ? 'Agotado' : selectedVariant ? 'Añadir al carrito' : 'Elige tu talla' }}
         </button>
         <p v-if="justAdded" class="mt-3 text-center text-xs text-nara-olive font-semibold">
           Añadido al carrito ✓

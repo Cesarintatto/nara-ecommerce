@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { healthCheck } from '../controllers/health.controller';
 import { listProducts, getProductBySlug } from '../controllers/products.controller';
 import { login } from '../controllers/auth.controller';
-import { getDashboardStats, updateOrderTracking } from '../controllers/admin.controller';
+import { getDashboardStats, listAdminOrders, updateOrderTracking } from '../controllers/admin.controller';
 import {
   listAdminProducts,
   getAdminProduct,
@@ -28,6 +28,7 @@ router.get('/products/:slug', getProductBySlug);
 
 router.post('/admin/auth/login', checkAuthLock, login);
 router.get('/admin/dashboard/stats', requireAuth, getDashboardStats);
+router.get('/admin/orders', requireAuth, listAdminOrders);
 router.patch('/admin/orders/:id/tracking', requireAuth, updateOrderTracking);
 
 router.get('/admin/categories', requireAuth, listCategories);

@@ -12,8 +12,8 @@ const formatPrice = (value) =>
     minimumFractionDigits: 0,
   }).format(value)
 
-const decreaseQuantity = (item) => cart.updateQuantity(item.productId, item.quantity - 1)
-const increaseQuantity = (item) => cart.updateQuantity(item.productId, item.quantity + 1)
+const decreaseQuantity = (item) => cart.updateQuantity(item.variantId, item.quantity - 1)
+const increaseQuantity = (item) => cart.updateQuantity(item.variantId, item.quantity + 1)
 </script>
 
 <template>
@@ -35,7 +35,7 @@ const increaseQuantity = (item) => cart.updateQuantity(item.productId, item.quan
       <div class="divide-y divide-nara-dark/10">
         <div
           v-for="item in cart.items"
-          :key="item.productId"
+          :key="item.variantId"
           class="py-6 flex items-center gap-4"
         >
           <div class="w-20 h-24 rounded-lg overflow-hidden bg-nara-olive/5 flex-shrink-0">
@@ -51,6 +51,7 @@ const increaseQuantity = (item) => cart.updateQuantity(item.productId, item.quan
             <router-link :to="`/producto/${item.slug}`" class="font-medium hover:text-nara-olive">
               {{ item.name }}
             </router-link>
+            <p class="text-sm text-nara-dark/70">{{ item.size === 'Única' ? 'Talla única' : `Talla ${item.size}` }}</p>
             <p class="text-sm text-nara-dark/50">{{ formatPrice(item.unitPrice) }} c/u</p>
 
             <div class="flex items-center gap-3 mt-2">
@@ -76,7 +77,7 @@ const increaseQuantity = (item) => cart.updateQuantity(item.productId, item.quan
               <button
                 type="button"
                 class="text-xs text-nara-dark/40 hover:text-red-600 underline"
-                @click="cart.removeItem(item.productId)"
+                @click="cart.removeItem(item.variantId)"
               >
                 Quitar
               </button>

@@ -23,7 +23,7 @@ export class OrderService {
       // 1. Buscar el checkout asociado (con todas sus reservas)
       const checkout = await tx.checkout.findUnique({
         where: { externalId: reference },
-        include: { reservations: { include: { product: true } } },
+        include: { reservations: { include: { product: true, variant: true } } },
       });
 
       if (!checkout) {
@@ -64,6 +64,8 @@ export class OrderService {
           items: {
             create: checkout.reservations.map((res) => ({
               productId: res.productId,
+              variantId: res.variantId,
+              size: res.variant?.size ?? null,
               quantity: res.quantity,
               priceAtPurchase: res.product.basePrice,
             })),
@@ -74,6 +76,12 @@ export class OrderService {
       // 5. Ajustar Inventario Físico de cada producto (el disponible ya se
       // restó al crear las reservas)
       for (const res of checkout.reservations) {
+        if (res.variantId) {
+          await tx.productVariant.update({
+            where: { id: res.variantId },
+            data: { stockPhysical: { decrement: res.quantity } },
+          });
+        }
         await tx.product.update({
           where: { id: res.productId },
           data: { stockPhysical: { decrement: res.quantity } },
@@ -83,7 +91,11 @@ export class OrderService {
       return {
         order: created,
         productNames: checkout.reservations
-          .map((res) => `${res.product.name} (x${res.quantity})`)
+          .map((res) =>
+            res.variant
+              ? `${res.product.name} talla ${res.variant.size} (x${res.quantity})`
+              : `${res.product.name} (x${res.quantity})`,
+          )
           .join(', '),
       };
     });

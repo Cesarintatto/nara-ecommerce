@@ -79,8 +79,6 @@ const saveProduct = async (form) => {
     ...form,
     basePrice: Number(form.basePrice),
     costPrice: Number(form.costPrice),
-    stockPhysical: Number(form.stockPhysical),
-    stockAvailable: form.stockAvailable !== '' ? Number(form.stockAvailable) : undefined,
   }
 
   try {
@@ -178,6 +176,16 @@ const deleteProduct = async (product) => {
               <td class="px-4 py-3">
                 <span class="text-nara-dark">{{ product.stockAvailable }}</span>
                 <span class="text-nara-dark/40"> / {{ product.stockPhysical }}</span>
+                <p class="mt-1 text-xs text-nara-dark/50">
+                  <template v-if="product.variants?.length === 1 && product.variants[0].size === 'Única'">Talla única</template>
+                  <template v-else>
+                    <span
+                      v-for="v in product.variants"
+                      :key="v.id"
+                      :class="['mr-2 whitespace-nowrap', v.stockAvailable === 0 ? 'text-red-600/70' : '']"
+                    >{{ v.size }}: {{ v.stockAvailable }}</span>
+                  </template>
+                </p>
               </td>
               <td class="px-4 py-3 text-right whitespace-nowrap">
                 <button

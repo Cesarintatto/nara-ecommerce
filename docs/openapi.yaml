@@ -68,9 +68,10 @@ paths:
                   type: array
                   items:
                     type: object
-                    required: [productId, quantity]
+                    required: [productId, variantId, quantity]
                     properties:
                       productId: { type: string }
+                      variantId: { type: string, description: "Talla elegida (ProductVariant.id)" }
                       quantity: { type: integer, minimum: 1 }
                 customerEmail: { type: string, format: email }
                 customerName: { type: string }
@@ -232,6 +233,20 @@ paths:
           description: No autorizado
         '503':
           description: GCS_BUCKET no está configurado en el servidor
+
+  /admin/orders:
+    get:
+      summary: Pedidos para el panel de despachos (con prendas y tallas)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [APPROVED, SHIPPED], default: APPROVED }
+          description: APPROVED = por despachar (más antiguos primero); SHIPPED = enviados
+      responses:
+        '200':
+          description: Lista de pedidos con items (producto, talla, cantidad) y dirección de envío
 
   /admin/orders/{id}/tracking:
     patch:

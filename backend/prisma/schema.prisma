@@ -37,12 +37,30 @@ model Product {
   category        Category           @relation(fields: [categoryId], references: [id])
   categoryId      String
   images          String[]           // URLs públicas en Google Cloud Storage (WebP)
-  stockPhysical   Int                // Inventario real en bodega
-  stockAvailable  Int                // Inventario menos reservas activas
+  stockPhysical   Int                // Total de todas las tallas (se mantiene igual a la suma de variants)
+  stockAvailable  Int                // Total disponible de todas las tallas (suma de variants)
+  variants        ProductVariant[]
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
   orderItems      OrderItem[]
   reservations    StockReservation[]
+}
+
+// Talla de un producto con su propio inventario. "Única" = talla única.
+model ProductVariant {
+  id             String             @id @default(uuid())
+  productId      String
+  product        Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  size           String             // "S", "M", "10", "Única"…
+  sortOrder      Int                @default(0)
+  stockPhysical  Int                @default(0) // Inventario real en bodega
+  stockAvailable Int                @default(0) // Inventario menos reservas activas
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  reservations   StockReservation[]
+  orderItems     OrderItem[]
+
+  @@unique([productId, size])
 }
 
 model Category {
@@ -72,6 +90,8 @@ model StockReservation {
   id         String   @id @default(uuid())
   productId  String
   product    Product  @relation(fields: [productId], references: [id])
+  variantId  String?
+  variant    ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Restrict)
   quantity   Int
   checkoutId String
   checkout   Checkout @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
@@ -99,6 +119,9 @@ model OrderItem {
   order     Order   @relation(fields: [orderId], references: [id])
   productId String
   product   Product @relation(fields: [productId], references: [id])
+  variantId String?
+  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  size      String?  // Talla comprada (se guarda el texto por si la talla se elimina después)
   quantity  Int
   priceAtPurchase Decimal @db.Decimal(10, 2)
 }

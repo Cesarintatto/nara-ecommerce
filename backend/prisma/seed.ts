@@ -77,12 +77,29 @@ async function main() {
     },
   ];
 
+  // Tallas de ejemplo por producto (la suma debe coincidir con su stock)
+  const sizesBySlug: Record<string, Array<[string, number]>> = {
+    'jean-aura': [['8', 4], ['10', 6], ['12', 6], ['14', 4]],
+    'blusa-lino': [['S', 5], ['M', 5], ['L', 5]],
+    'vestido-oliva': [['Única', 10]],
+    'camisa-skin': [['S', 4], ['M', 4], ['L', 4]],
+  };
+
   for (const product of products) {
-    await prisma.product.upsert({
+    const saved = await prisma.product.upsert({
       where: { slug: product.slug },
       update: product,
       create: product,
     });
+
+    const sizes = sizesBySlug[product.slug] ?? [['Única', product.stockPhysical]];
+    for (const [index, [size, stock]] of sizes.entries()) {
+      await prisma.productVariant.upsert({
+        where: { productId_size: { productId: saved.id, size } },
+        update: {},
+        create: { productId: saved.id, size, sortOrder: index, stockPhysical: stock, stockAvailable: stock },
+      });
+    }
   }
 
   console.log('Seed completado.');

@@ -23,6 +23,9 @@ const validateBody = (body: Partial<CheckoutBody>): string | null => {
     if (!item?.productId || typeof item.productId !== 'string') {
       return 'Cada item del carrito necesita un productId válido.';
     }
+    if (!item?.variantId || typeof item.variantId !== 'string') {
+      return 'Elige la talla de cada prenda del carrito.';
+    }
     if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
       return 'La cantidad de cada item debe ser un entero mayor a 0.';
     }

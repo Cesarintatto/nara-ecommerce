@@ -5,7 +5,9 @@ const STORAGE_KEY = 'nara_cart'
 function loadItems() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
+    const items = raw ? JSON.parse(raw) : []
+    // Carritos guardados antes de las tallas no traen variantId: se descartan
+    return Array.isArray(items) ? items.filter((item) => item?.variantId) : []
   } catch {
     return []
   }
@@ -23,18 +25,25 @@ export const useCartStore = defineStore('cart', {
 
   actions: {
     persist() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items))
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items))
+      } catch {
+        // Sin almacenamiento disponible: el carrito vive solo en esta pestaña
+      }
     },
 
-    addItem(product, quantity = 1) {
-      const maxQty = product.stockAvailable
-      const existing = this.items.find((item) => item.productId === product.id)
+    // Cada línea del carrito es una prenda en una talla (variant)
+    addItem(product, variant, quantity = 1) {
+      const maxQty = variant.stockAvailable
+      const existing = this.items.find((item) => item.variantId === variant.id)
 
       if (existing) {
         existing.quantity = Math.min(existing.quantity + quantity, maxQty)
       } else {
         this.items.push({
           productId: product.id,
+          variantId: variant.id,
+          size: variant.size,
           slug: product.slug,
           name: product.name,
           image: product.images?.[0] || null,
@@ -46,13 +55,13 @@ export const useCartStore = defineStore('cart', {
       this.persist()
     },
 
-    removeItem(productId) {
-      this.items = this.items.filter((item) => item.productId !== productId)
+    removeItem(variantId) {
+      this.items = this.items.filter((item) => item.variantId !== variantId)
       this.persist()
     },
 
-    updateQuantity(productId, quantity) {
-      const item = this.items.find((item) => item.productId === productId)
+    updateQuantity(variantId, quantity) {
+      const item = this.items.find((item) => item.variantId === variantId)
       if (!item) return
       item.quantity = Math.max(1, Math.min(quantity, item.stockAvailable))
       this.persist()

@@ -19,6 +19,7 @@ export interface PrivacyConsent {
 
 export interface CartItemInput {
   productId: string;
+  variantId: string; // talla elegida
   quantity: number;
 }
 
@@ -44,24 +45,32 @@ export class StockService {
   ) {
     const expiresAt = new Date(Date.now() + RESERVATION_TTL_MINUTES * 60 * 1000);
 
-    // Orden estable por productId: evita deadlocks si dos carritos
-    // comparten productos y los procesan en orden distinto.
-    const sortedItems = [...items].sort((a, b) => a.productId.localeCompare(b.productId));
+    // Orden estable por talla: evita deadlocks si dos carritos comparten
+    // prendas y las procesan en orden distinto.
+    const sortedItems = [...items].sort((a, b) => a.variantId.localeCompare(b.variantId));
 
     return await prisma.$transaction(async (tx) => {
       for (const item of sortedItems) {
-        const { count } = await tx.product.updateMany({
-          where: { id: item.productId, stockAvailable: { gte: item.quantity } },
+        // El stock se aparta de la TALLA (con verificación atómica) y el
+        // total del producto se mantiene como la suma de sus tallas.
+        const { count } = await tx.productVariant.updateMany({
+          where: { id: item.variantId, productId: item.productId, stockAvailable: { gte: item.quantity } },
           data: { stockAvailable: { decrement: item.quantity } },
         });
 
         if (count === 0) {
-          const product = await tx.product.findUnique({
-            where: { id: item.productId },
-            select: { name: true },
+          const variant = await tx.productVariant.findUnique({
+            where: { id: item.variantId },
+            select: { size: true, product: { select: { name: true } } },
           });
-          throw new InsufficientStockError(item.productId, product?.name);
+          const label = variant ? `${variant.product.name} (talla ${variant.size})` : undefined;
+          throw new InsufficientStockError(item.productId, label);
         }
+
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { stockAvailable: { decrement: item.quantity } },
+        });
       }
 
       return tx.checkout.create({
@@ -77,6 +86,7 @@ export class StockService {
           reservations: {
             create: items.map((item) => ({
               productId: item.productId,
+              variantId: item.variantId,
               quantity: item.quantity,
             })),
           },
@@ -105,6 +115,12 @@ export class StockService {
       if (count === 0) return false;
 
       for (const res of checkout.reservations) {
+        if (res.variantId) {
+          await tx.productVariant.update({
+            where: { id: res.variantId },
+            data: { stockAvailable: { increment: res.quantity } },
+          });
+        }
         await tx.product.update({
           where: { id: res.productId },
           data: { stockAvailable: { increment: res.quantity } },

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, computed } from 'vue'
 import api from '../../api/client'
+import SizeStockEditor from './SizeStockEditor.vue'
 
 const props = defineProps({
   open: Boolean,
@@ -19,8 +20,7 @@ const emptyForm = () => ({
   categoryId: '',
   basePrice: '',
   costPrice: '',
-  stockPhysical: '',
-  stockAvailable: '',
+  sizes: { mode: 'tallas', rows: [] },
   images: [],
 })
 
@@ -34,6 +34,37 @@ const urlInput = ref('')
 const fileInput = ref(null)
 
 const isEditing = computed(() => Boolean(props.product?.id))
+
+// Tallas del producto → filas del editor
+const sizesFromProduct = (product) => {
+  const variants = product.variants || []
+  const rows = variants.map((v) => ({
+    key: v.id,
+    id: v.id,
+    size: v.size,
+    stockPhysical: String(v.stockPhysical),
+    reserved: Math.max(0, v.stockPhysical - v.stockAvailable),
+  }))
+  const mode = variants.length === 1 && variants[0].size === 'Única' ? 'unica' : 'tallas'
+  return { mode, rows }
+}
+
+const sizesError = ref('')
+
+// Filas del editor → tallas que se envían al backend
+const buildVariants = () => {
+  const { mode, rows } = form.value.sizes
+  const selected = mode === 'unica' ? rows.filter((r) => r.size === 'Única') : rows.filter((r) => r.size !== 'Única')
+  if (selected.length === 0) {
+    return { error: mode === 'unica' ? 'Indica el stock de la talla única.' : 'Agrega al menos una talla.' }
+  }
+  const names = selected.map((r) => r.size.trim().toLowerCase())
+  if (names.some((n) => !n)) return { error: 'Escribe el nombre de cada talla.' }
+  if (new Set(names).size !== names.length) return { error: 'Hay tallas repetidas.' }
+  return {
+    variants: selected.map((r) => ({ id: r.id || undefined, size: r.size.trim(), stockPhysical: Number(r.stockPhysical) })),
+  }
+}
 
 const selectedCategoryName = computed(
   () => props.categories.find((c) => c.id === form.value.categoryId)?.name || '',
@@ -51,8 +82,7 @@ watch(
         categoryId: props.product.categoryId,
         basePrice: String(props.product.basePrice),
         costPrice: String(props.product.costPrice),
-        stockPhysical: String(props.product.stockPhysical),
-        stockAvailable: String(props.product.stockAvailable),
+        sizes: sizesFromProduct(props.product),
         images: [...(props.product.images || [])],
       }
     } else {
@@ -62,6 +92,7 @@ watch(
       }
     }
     uploadError.value = ''
+    sizesError.value = ''
     urlInput.value = ''
   },
   { immediate: true },
@@ -137,7 +168,11 @@ const makeMain = (index) => {
 }
 
 const submit = () => {
-  emit('save', { ...form.value, images: [...form.value.images] })
+  const { variants, error } = buildVariants()
+  sizesError.value = error || ''
+  if (error) return
+  const { sizes, ...rest } = form.value
+  emit('save', { ...rest, images: [...form.value.images], variants })
 }
 </script>
 
@@ -220,30 +255,7 @@ const submit = () => {
           </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label class="block text-xs uppercase tracking-wider text-nara-dark/70 mb-1">Stock físico</label>
-            <input
-              v-model="form.stockPhysical"
-              type="number"
-              min="0"
-              step="1"
-              required
-              class="w-full px-3 py-2 rounded-nara border border-nara-olive/30 focus:outline-none focus:ring-2 focus:ring-nara-olive/40"
-            />
-          </div>
-          <div>
-            <label class="block text-xs uppercase tracking-wider text-nara-dark/70 mb-1">Stock disponible</label>
-            <input
-              v-model="form.stockAvailable"
-              type="number"
-              min="0"
-              step="1"
-              :placeholder="isEditing ? '' : 'Igual al físico si vacío'"
-              class="w-full px-3 py-2 rounded-nara border border-nara-olive/30 focus:outline-none focus:ring-2 focus:ring-nara-olive/40"
-            />
-          </div>
-        </div>
+        <SizeStockEditor v-model="form.sizes" />
 
         <div>
           <div class="flex items-center justify-between mb-2">
@@ -325,6 +337,7 @@ const submit = () => {
           <p v-if="uploadError" class="mt-2 text-xs text-red-600">{{ uploadError }}</p>
         </div>
 
+        <p v-if="sizesError" class="text-sm text-red-600">{{ sizesError }}</p>
         <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
 
         <div class="flex gap-3 pt-2">
